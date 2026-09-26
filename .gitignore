@@ -1,0 +1,17 @@
+# Local notes, never committed
+NOTES-local.md
+
+# Configured copies of the fragment and build output
+*.local.groovy
+dist/
+
+# Tooling
+__pycache__/
+*.pyc
+node_modules/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
