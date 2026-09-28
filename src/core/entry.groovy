@@ -15,6 +15,11 @@ try {
     // a jakarta.servlet request here, earlier versions a javax.servlet one.
     def req = ExecutingHttpRequest.get()
     def uri = req?.getRequestURI() ?: ''
+    // A Jira served under a context path (for example /jira) reports URIs
+    // that start with it. Match without it, and put it back on every
+    // root-relative link the card carries.
+    String cp = req?.getContextPath() ?: ''
+    if (cp && uri.startsWith(cp)) { uri = uri.substring(cp.length()) }
     def mBrowse = (uri =~ '(?i)^/browse/([a-z][a-z0-9_]*-[0-9]+)')
     def mAgent  = (uri =~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?/([a-z][a-z0-9_]*-[0-9]+)$')
     def mQueues = (uri =~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?$')
@@ -27,6 +32,14 @@ try {
             def issue = key ? ComponentAccessor.getIssueManager().getIssueObject(key) : null
             if (issue != null) { key = issue.getKey() }   // canonical key, not the URL's
             payload = decide(user, issue, key, pageKind)
+            if (payload && cp) {
+                ['issueUrl', 'portalUrl', 'helpCenter', 'fallbackUrl', 'myRequests'].each { k ->
+                    def v = payload[k]
+                    if (v instanceof String && v.startsWith('/') && !v.startsWith(cp + '/')) {
+                        payload[k] = cp + v
+                    }
+                }
+            }
         }
     } else {
         pageKind = null

@@ -103,14 +103,14 @@ final boolean INTERNAL_REQUIRE_USERNAME = true
 final List   INTERNAL_GROUPS = ['jira-staff']
 
 // Issue security SCHEMES whose levels may get the restricted card; levels of
-// every other scheme keep the generic card. Keep the L suffix: getSchemeId()
-// is a Long, and [12345].contains(12345L) is false, which would silently
-// switch the card off everywhere.
+// every other scheme keep the generic card. Ids are compared as Long whether
+// you write 12345 or 12345L (1.0.0 needed the L suffix; it is still the
+// clearest way to write an id).
 final List   SECURED_SCHEMES     = [12345L]
 
 // Levels inside those schemes that must never get the card, because their
 // NAME or their MEMBERS are what the level protects (compartments for people
-// matters, for example). Level ids, with the L suffix.
+// matters, for example). Level ids; compared as Long either way.
 final List   SECURED_SKIP_LEVELS = [12346L, 12347L]
 
 // What the restricted card may SAY once every gate has passed (the gates

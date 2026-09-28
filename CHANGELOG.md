@@ -25,6 +25,8 @@ Modular source, five ready-made profiles, disclosure switches, and a compatibili
 - `getUsersSecurityLevels`, documented as "can be null", is guarded; the permission scheme lookup is null-checked.
 - Permission keys use the `ProjectPermissions` constants instead of string literals.
 - The request object stays untyped, so the fragment runs unchanged on Jira 11, where `ExecutingHttpRequest.get()` returns a `jakarta.servlet` request.
+- A Jira served under a context path (for example `/jira`) is handled: the entry point strips it before matching the page and puts it back on every root-relative link the card carries. 1.0.0 rendered nothing on such an instance. Not verified on one.
+- Scheme and level ids in CONFIG are compared as `Long` whether or not they carry the `L` suffix; per-level `DISCLOSURE_BY_LEVEL` keys likewise.
 - Documentation: the fragment type is called "Show a web panel" in ScriptRunner's documentation, not "Custom web panel"; the requirements now state the Javadoc-verified range and the ScriptRunner pairing instead of "Jira 9.x, ScriptRunner 8.x (assumed)".
 - `build/sync_tests.py` reads `dist/full.groovy` by default; `tests/render_test.groovy` gained a case for a hidden field name.
 

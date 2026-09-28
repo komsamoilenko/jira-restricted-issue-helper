@@ -1,0 +1,31 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Assembled profiles match the source
+        run: python build/assemble.py --all --check
+
+      - name: No comments or stray dollar signs in the client script
+        shell: bash
+        run: |
+          for f in dist/*.groovy; do
+            python build/strip_client_comments.py "$f" --check
+          done
+
+      - name: Tests carry the deployed sections
+        run: python build/sync_tests.py --check
