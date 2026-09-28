@@ -161,7 +161,7 @@ A profile overrides a value with a `NAME = value` line and a text with a `TEXT.k
 | `jsm-only` | `MODE_ORDER = ['portal', 'share', 'moved']` |
 | `no-jsm` | `MODE_ORDER = ['secured']`, `FALLBACK_URL = '/secure/ContactAdministrators!default.jspa'` (the Contact Administrators form must be switched on under **Administration > System > General configuration**), `HELP_CENTER = '/secure/Dashboard.jspa'`, and the six texts listed above |
 | `secured-minimal` | `DISCLOSURE = [levelName: false, fieldName: false, people: false]` |
-| `exists-only` | `MODE_ORDER = ['restricted', 'missing']`, `RESTRICTED_SCOPE = 'all'`; modules: the mail-domain policy and the two existence-only modes only |
+| `exists-only` | `MODE_ORDER = ['restricted', 'missing']`, `RESTRICTED_SCOPE = 'any-issue'` (the only scope at which the `missing` card answers); modules: the mail-domain policy and the two existence-only modes only |
 | `group-policy` | `INTERNAL_GROUPS = ['jira-staff']`, the same placeholder as the default |
 
 ## Fixed values in the code (not configuration)

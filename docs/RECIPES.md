@@ -115,7 +115,7 @@ For an instance that does not want the card to share anything about a restricted
 
 **The trade-off:** the audience can tell which keys exist, including by trying keys. Choose this for staff, never for customers. If some compartments must stay unconfirmed, do not use this profile: start from `full` instead and set `MODE_ORDER = ['portal', 'share', 'moved', 'secured', 'restricted']` with `RESTRICTED_SCOPE` `'in-scope'`. That gives the detailed card where it is safe, the bare fact for the other issues in scope, the generic card for everything outside the scope and for missing keys alike, and no `missing` card (`restricted` and `missing` are built into `full`; `missing` stays silent at that scope even if listed).
 
-**What to test:** E01 to E08 in `tests/decision_test.groovy` call the two modes directly, whichever `MODE_ORDER` says (E03 assumes `RESTRICTED_SCOPE = 'in-scope'`; with `'all'` expect `restricted` there). `tests/render_test.groovy` renders both cards.
+**What to test:** E01 to E09 in `tests/decision_test.groovy` call the two modes directly, whichever `MODE_ORDER` says. With this profile's `'any-issue'` scope two expectations differ from the `full` defaults: E03 (a compartment issue) expects `restricted` rather than no answer, and E04 (a viewer on the level without Browse) expects `restricted`; E04, E06 and T14 follow the CONFIG values already, E03 you edit. `tests/render_test.groovy` renders both cards.
 
 ## Usernames that are not e-mail addresses
 

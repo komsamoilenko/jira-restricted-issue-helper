@@ -634,22 +634,26 @@ MODES['restricted'] = { ctx ->
 // restricted issue from a deleted or mistyped key, which the generic card
 // deliberately does not. OFF unless 'missing' is in MODE_ORDER.
 //
-// It answers ONLY when 'restricted' is in MODE_ORDER as well and
-// RESTRICTED_SCOPE is 'any-issue'. At any narrower scope an existing issue
-// outside the scope gets the generic card, and a "missing" card next to it
-// would confirm that every generic key exists: the scope would then hide the
-// wording, not the fact. So at those scopes this mode stays silent and a
-// missing key keeps the generic card, exactly like an issue outside the scope.
+// It answers ONLY when the 'restricted' mode is built into this file AND
+// listed in MODE_ORDER AND RESTRICTED_SCOPE is 'any-issue'. At any narrower
+// scope, or without 'restricted', an existing issue outside the scope gets
+// the generic card, and a "missing" card next to it would confirm that every
+// generic key exists: the scope would then hide the wording, not the fact.
+// So in every other configuration this mode stays silent and a missing key
+// keeps the generic card, exactly like an issue outside the scope.
 //
 // Audience: the viewer passes the internal-viewer policy and holds
-// application access. Everyone else keeps the generic card, which reads the
-// same whether the key exists or not.
+// application access; checked first, so that the audience gate is exercised
+// in every build, whatever the scope. Everyone else keeps the generic card,
+// which reads the same whether the key exists or not.
 // Reveals: that no issue has this key.
 
 MODES['missing'] = { ctx ->
     if (ctx.issue != null || !ctx.key) { return null }
-    if (!(MODE_ORDER.contains('restricted') && RESTRICTED_SCOPE == 'any-issue')) { return null }
     if (!isInternal(ctx.user) || !hasAppAccess(ctx.user)) { return null }
+    if (!(MODES['restricted'] != null && MODE_ORDER.contains('restricted') && RESTRICTED_SCOPE == 'any-issue')) {
+        return null
+    }
     return [mode: 'missing', issueKey: ctx.key, helpCenter: HELP_CENTER, fallbackUrl: FALLBACK_URL]
 }
 
@@ -743,6 +747,10 @@ def decide = { user, issue, String key, String pageKind, String urlKey = null ->
 //  erin@example.com      internal viewer who IS on the level "Project team
 //                        only" of the HELP project, but is not a participant
 //                        of HELP-204 and HELP-205
+//  frank@example.com     internal, holds an application role, IS on the
+//                        level of DEMO-101, but the permission scheme gives
+//                        him no Browse on DEMO (in none of the roles or
+//                        groups that hold it), so he cannot open the issue
 //
 //  DEMO-101  level "Project team only" (scheme in SECURED_SCHEMES), grants
 //            on the multi-user field "Can also see", which is on the edit
@@ -910,9 +918,10 @@ def CASES = [
   [name: 'E03 restricted: level in SECURED_SKIP_LEVELS, scope in-scope -> no answer',
    user: 'alice@example.com', key: 'DEMO-104', page: 'browse', direct: 'restricted',
    needsLevel: true, needsOffLevel: true, needsInternal: true, needsAppRole: true, expect: null],
-  [name: 'E04 restricted: viewer already on the level -> no answer',
-   user: 'dave@example.com', key: 'DEMO-101', page: 'browse', direct: 'restricted',
-   needsLevel: true, needsOnLevel: true, expect: null],
+  [name: 'E04 restricted: viewer on the level but without Browse -> no answer (restricted at any-issue: the level is not what blocks him)',
+   user: 'frank@example.com', key: 'DEMO-101', page: 'browse', direct: 'restricted',
+   needsLevel: true, needsOnLevel: true, needsInternal: true, needsAppRole: true,
+   expect: RESTRICTED_SCOPE == 'any-issue' ? [mode: 'restricted', issueKey: 'DEMO-101'] : null],
   [name: 'E05 restricted: deactivated internal account with a role -> no answer',
    user: 'former@example.com', key: 'DEMO-101', page: 'browse', direct: 'restricted',
    needsLevel: true, needsOffLevel: true, needsInactive: true, needsInternal: true, needsAppRole: true,
