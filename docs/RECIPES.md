@@ -2,7 +2,7 @@
 
 Start from your situation. Each recipe says which profile to take, which CONFIG values to change, what a blocked viewer will see, and which test cases to run. Profiles are in [profiles/](../profiles/), the assembled files in [dist/](../dist/). Every value named here is documented in [CONFIG.md](CONFIG.md), and the reasoning behind the gates is in [DESIGN.md](DESIGN.md).
 
-Test ids refer to [tests/decision_test.groovy](../tests/decision_test.groovy): T01 to T15 cover the cards, X01 to X07 the gates of the restricted card. [tests/README.md](../tests/README.md) says how to run them.
+Test ids refer to [tests/decision_test.groovy](../tests/decision_test.groovy): T01 to T17 cover the cards, X01 to X07 the gates of the restricted card, X08 to X13 the application-access gate on its own, E01 to E09 the existence-only modes. [tests/README.md](../tests/README.md) says how to run them.
 
 | Situation | Profile | Recipe |
 |---|---|---|
@@ -45,7 +45,7 @@ The author's case. Service Management requests and ordinary issues live side by 
 
 **The viewer sees** one of the five cards described in the [README](../README.md): the restricted card with the level's name, the field, up to two people and a copy-ready message; the portal card; the share card; the moved card; or the generic card.
 
-**Test:** every case, T01 to T15 and X01 to X07, the render test, and the kill-switch test.
+**Test:** every case, T01 to T17, X01 to X13 and E01 to E09, the render test, the route test and the kill-switch test.
 
 ## Jira Software or Jira Core without Service Management
 
@@ -94,7 +94,7 @@ A reader of the post that introduced this project asked how far the card can be 
 | Hide the level's name and the people on some levels | `full`, with `DISCLOSURE_BY_LEVEL = [12349L: [levelName: false, people: false]]` |
 | Never name people | `full`, with `DISCLOSURE = [levelName: true, fieldName: true, people: false]` |
 | Name nothing, anywhere | `secured-minimal`: `DISCLOSURE = [levelName: false, fieldName: false, people: false]` |
-| Do not even confirm that issues on a level exist | put the level on `SECURED_SKIP_LEVELS`, or keep its scheme out of `SECURED_SCHEMES` |
+| Do not even confirm that issues on a level exist | put the level on `SECURED_SKIP_LEVELS`, or keep its scheme out of `SECURED_SCHEMES`; and do not run the existence-only modes at `RESTRICTED_SCOPE` `all` or `any-issue` |
 | Never talk about restricted issues | `jsm-only`, or `SECURED_CARD = false` |
 
 Level ids take the `L` suffix. A key missing from a `DISCLOSURE` map counts as off. `DISCLOSURE_BY_LEVEL` overrides the global map per level, in both directions.
@@ -109,11 +109,11 @@ For an instance that does not want the card to share anything about a restricted
 
 **Profile:** `exists-only`. It builds the mail-domain policy and two modes: `restricted` (the issue exists and you may not view it) and `missing` (no issue has this key). No Service Management cards, no `secured` card, no names of any kind.
 
-**CONFIG to set:** `INTERNAL_MAIL_DOMAINS` and `INTERNAL_REQUIRE_USERNAME` (who counts as staff), `FALLBACK_URL` and `HELP_CENTER` (where the two buttons lead). `RESTRICTED_SCOPE` is `'all'` in this profile: every issue hidden by a security level is confirmed to exist. Set it to `'in-scope'` and list your schemes and skip levels if some compartments must stay indistinguishable from missing keys, or to `'any-issue'` if a viewer without Browse on the project should also be told the issue exists.
+**CONFIG to set:** `INTERNAL_MAIL_DOMAINS` and `INTERNAL_REQUIRE_USERNAME` (who counts as staff), `FALLBACK_URL` and `HELP_CENTER` (where the two buttons lead). `RESTRICTED_SCOPE` is `'any-issue'` in this profile and must stay so: it is the only scope at which the `missing` card answers, because at a narrower scope an existing issue outside the scope would get the generic card and a `missing` card next to it would confirm that every generic key exists. So this profile confirms the existence of every issue the viewer cannot browse, level or not, archived or not, on purpose.
 
 **What the viewer sees:** a lock, "This issue is restricted", "{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request.", a "Raise a request" button and a "Got access? Open {key}" link. For a key that resolves to nothing: "No issue with this key", "There is no issue {key}. It may have been deleted, or the key may be mistyped.", the Help Center button. Everyone outside the audience, portal-only customers included, keeps the generic card.
 
-**The trade-off:** the audience can tell which keys exist, including by trying keys. Choose this for staff, never for customers. If you would rather show the detailed card where it is safe and only the fact elsewhere, start from `full` instead and set `MODE_ORDER = ['portal', 'share', 'moved', 'secured', 'restricted']`: `restricted` and `missing` are built into `full` and only need to be listed.
+**The trade-off:** the audience can tell which keys exist, including by trying keys. Choose this for staff, never for customers. If some compartments must stay unconfirmed, do not use this profile: start from `full` instead and set `MODE_ORDER = ['portal', 'share', 'moved', 'secured', 'restricted']` with `RESTRICTED_SCOPE` `'in-scope'`. That gives the detailed card where it is safe, the bare fact for the other issues in scope, the generic card for everything outside the scope and for missing keys alike, and no `missing` card (`restricted` and `missing` are built into `full`; `missing` stays silent at that scope even if listed).
 
 **What to test:** E01 to E08 in `tests/decision_test.groovy` call the two modes directly, whichever `MODE_ORDER` says (E03 assumes `RESTRICTED_SCOPE = 'in-scope'`; with `'all'` expect `restricted` there). `tests/render_test.groovy` renders both cards.
 
@@ -212,8 +212,8 @@ Jira gives a sub-task its parent's security level. It does not copy the value of
 - **The REST API and the mobile app.** No web page is rendered, so there is nothing for a web panel to draw into.
 - **Browse URLs with `?jql=` or `?filter=`.** They render a different page, which the fragment does not cover.
 - **No Browse permission on the project at all.** The viewer gets the generic card, unless the issue's level and the permission scheme meet every gate of the restricted card. A `project-access` mode, naming someone who can grant access to the project under gates like the restricted card's, is planned. Atlassian's suggestion for a request-access button on Data Center, [JRASERVER-59366](https://jira.atlassian.com/browse/JRASERVER-59366), has been open since 2016.
-- **Archived projects.** The generic card, tested by X06. An `archived` mode is planned.
-- **Deleted issues and keys that never existed.** The generic card, identical to the card for a hidden issue. This is deliberate and will not change.
+- **Archived projects.** The generic card from the restricted card's gates, tested by X06; with the existence-only `restricted` mode on, an archived issue the viewer cannot browse is confirmed to exist like any other. An `archived` mode with its own wording is planned.
+- **Deleted issues and keys that never existed.** The generic card, identical to the card for a hidden issue, in every profile except `exists-only` (and any build that lists `missing` at `RESTRICTED_SCOPE` `'any-issue'`), where internal viewers with application access get the `missing` card instead. For everyone else this is deliberate and will not change.
 - **Portal-side reasons** that the portal and share cards do not explain: a request without a request type, a level that excludes the portal's customers, an inactive or duplicate account.
 - **Jira Cloud.** Not possible: the fragment is a ScriptRunner for Jira Data Center script that calls the Data Center Java API. Jira Cloud has its own Request access button on a work item you cannot view.
 - **Confluence.** Confluence Data Center has its own Request access on restricted pages (Atlassian documentation, "Page restrictions"). Nothing to add.

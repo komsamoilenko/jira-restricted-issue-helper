@@ -102,9 +102,13 @@ final List   SECURED_FIELD_PREFERENCE = []
 // Scope of the existence-only card (modes/restricted; off unless 'restricted'
 // is in MODE_ORDER). It tells an internal viewer with application access that
 // the issue exists and is closed to them, and nothing else:
-//   'in-scope'  only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS, so
-//               issues in compartments whose existence is the secret stay
-//               indistinguishable from missing keys;
+//   'in-scope'  only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS;
 //   'all'       every issue hidden by a security level;
 //   'any-issue' every issue the viewer cannot browse, level or not.
+// Issues outside the scope keep the generic card. The 'missing' card ("no
+// issue has this key") answers ONLY at 'any-issue' with 'restricted' also in
+// MODE_ORDER: at a narrower scope it would sit next to generic cards for
+// existing issues and confirm that every one of them exists. So at
+// 'in-scope' and 'all' a missing key and an issue outside the scope look the
+// same. Any other value keeps both modes silent.
 final String RESTRICTED_SCOPE = 'in-scope'

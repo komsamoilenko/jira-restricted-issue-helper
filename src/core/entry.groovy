@@ -78,12 +78,13 @@ try {
     def r = route(req?.getRequestURI() ?: '', cp)
     pageKind = r.pageKind
     if (pageKind) {
-        def key  = r.key
+        String urlKey = r.key
+        def key  = urlKey
         def user = ComponentAccessor.getJiraAuthenticationContext().getLoggedInUser()
         if (user) {
             def issue = key ? ComponentAccessor.getIssueManager().getIssueObject(key) : null
             if (issue != null) { key = issue.getKey() }   // canonical key, not the URL's
-            payload = prefixLinks(decide(user, issue, key, pageKind), cp)
+            payload = prefixLinks(decide(user, issue, key, pageKind, urlKey), cp)
         }
     }
 } catch (Throwable ignored) {

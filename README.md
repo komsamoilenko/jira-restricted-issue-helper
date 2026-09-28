@@ -22,7 +22,7 @@ As far as I could find:
 
 ## What the card does
 
-The fragment renders nothing on pages that work. On the two dead-end pages, `/browse/<KEY>` and the Jira Service Management agent view, it replaces the error block with one card, in one of five modes:
+The fragment renders nothing on pages that work. On the two dead-end pages, `/browse/<KEY>` and the Jira Service Management agent view, it replaces the error block with one card. The `full` profile has these five modes (two more, `restricted` and `missing`, are built in but off; see [Scenarios](#scenarios)):
 
 | Mode | When | What the viewer gets |
 |---|---|---|
@@ -53,7 +53,7 @@ A viewer who fails any gate keeps the generic card, which reads the same whether
 
 ## Scenarios
 
-Five profiles are assembled and committed in [dist/](dist/). Each is one file, ready to paste into the fragment once its CONFIG block holds your values.
+Six profiles are assembled and committed in [dist/](dist/). Each is one file, ready to paste into the fragment once its CONFIG block holds your values.
 
 | Profile | For | What is in it |
 |---|---|---|
@@ -126,10 +126,10 @@ src/config/config.groovy         every CONFIG value, with comments
 src/config/text.en.groovy        TEXT: every string the card shows
 src/core/                        context (shared helpers, the mode registry), decide, entry
 src/policy/                      internal-mail-domain, internal-group, people-reporter-assignee, jsm
-src/modes/                       portal, share, moved, secured, and _template for your own
+src/modes/                       portal, share, moved, secured, restricted, missing, and _template for your own
 src/render/                      render.groovy (payload to inline script), client.js (the browser script)
 profiles/*.profile               which modules, and which CONFIG and TEXT overrides, make each build
-dist/*.groovy                    the five assembled profiles, ready to paste
+dist/*.groovy                    the six assembled profiles, ready to paste
 build/assemble.py                joins a profile into dist/<profile>.groovy
 build/strip_client_comments.py   strips and checks comments in client script blocks
 build/sync_tests.py              copies the deployed sections into the tests

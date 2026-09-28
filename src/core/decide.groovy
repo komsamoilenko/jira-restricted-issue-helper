@@ -8,7 +8,10 @@ import com.atlassian.jira.component.ComponentAccessor
 import com.atlassian.jira.permission.ProjectPermissions
 
 // null = the page renders fine for them -> stay out of the way.
-def decide = { user, issue, String key, String pageKind ->
+// key is the canonical key of the resolved issue (or the URL's key when no
+// issue resolves); urlKey is the key as the viewer typed it, which differs
+// after a move. Modes that must not reveal a move use ctx.urlKey.
+def decide = { user, issue, String key, String pageKind, String urlKey = null ->
     def pm     = ComponentAccessor.getPermissionManager()
     def BROWSE = ProjectPermissions.BROWSE_PROJECTS
 
@@ -44,7 +47,7 @@ def decide = { user, issue, String key, String pageKind ->
     } catch (Throwable ignoredProj) {
         proj = null             // keep the generic card
     }
-    def ctx = [user: user, issue: issue, key: key, pageKind: pageKind,
+    def ctx = [user: user, issue: issue, key: key, urlKey: urlKey ?: key, pageKind: pageKind,
                proj: proj, pm: pm, BROWSE: BROWSE]
 
     // First mode in MODE_ORDER that answers wins. A mode that is not in this

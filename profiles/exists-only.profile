@@ -6,13 +6,16 @@
 #
 # Audience: internal viewers (mail-domain policy) with application access;
 # everyone else keeps the generic card, which reads the same either way.
-# RESTRICTED_SCOPE = 'all' confirms every level-protected issue; set it to
-# 'in-scope' to keep compartments listed in SECURED_SKIP_LEVELS (or schemes
-# outside SECURED_SCHEMES) indistinguishable from missing keys, or to
-# 'any-issue' to cover issues the viewer cannot browse for any reason.
-# Note that the audience can then tell which keys exist, so the profile is
-# meant for staff, never for customers.
+# RESTRICTED_SCOPE must be 'any-issue' here: it is the only scope at which the
+# 'missing' card answers, because at a narrower scope an existing issue
+# outside the scope would get the generic card and the "missing" card next to
+# it would confirm that every generic key exists. So this profile confirms the
+# existence of EVERY issue the viewer cannot browse, on purpose, and the
+# audience can tell which keys exist, including by trying keys. Meant for
+# staff, never for customers. To keep some compartments unconfirmed, use the
+# full profile with 'restricted' added to MODE_ORDER and RESTRICTED_SCOPE
+# 'in-scope' instead: then no "missing" card exists.
 name = exists-only
 modules = internal-mail-domain restricted missing
 MODE_ORDER = ['restricted', 'missing']
-RESTRICTED_SCOPE = 'all'
+RESTRICTED_SCOPE = 'any-issue'

@@ -20,16 +20,21 @@
 //                                     stock "Snap! You can't view this page"
 //                                     (<section id="unlicensed-project-type">)
 //
-//  Modes, tried in MODE_ORDER; the generic card is the fallback:
-//   portal  - a Service Management request the viewer CAN open on the portal
-//   share   - a request the viewer cannot open, but whose reporter can add
-//             them with the portal Share button
-//   moved   - it USED to be a request but was moved out of the service desk
-//   secured - the issue's security level is what hides it: say so, point at
-//             the level's "add one person to this issue" field, and name who
-//             can fill it in (only when every gate in docs/DESIGN.md holds)
-//   generic - anything else -> Help Center + raise a request; identical for a
-//             hidden issue and for a key that does not exist
+//  Modes built into this file: restricted, missing.
+//  Tried in MODE_ORDER; the generic card is the fallback. The full set:
+//   portal     - a Service Management request the viewer CAN open on the portal
+//   share      - a request the viewer cannot open, but whose reporter can add
+//                them with the portal Share button
+//   moved      - it USED to be a request but was moved out of the service desk
+//   secured    - the issue's security level is what hides it: say so, point at
+//                the level's "add one person to this issue" field, and name who
+//                can fill it in (only when every gate in docs/DESIGN.md holds)
+//   restricted - existence only: the issue exists and the viewer may not see
+//                it, nothing else (off unless listed in MODE_ORDER)
+//   missing    - no issue has this key (off unless listed; answers only at
+//                RESTRICTED_SCOPE 'any-issue' with restricted also listed)
+//   generic    - anything else -> Help Center + raise a request; identical for
+//                a hidden issue and for a key that does not exist
 //
 //  Properties that hold for every mode: the payload defaults to the generic
 //  card BEFORE any lookup, so an exception degrades to a usable card; the JSON
@@ -151,12 +156,16 @@ final List   SECURED_FIELD_PREFERENCE = []
 // Scope of the existence-only card (modes/restricted; off unless 'restricted'
 // is in MODE_ORDER). It tells an internal viewer with application access that
 // the issue exists and is closed to them, and nothing else:
-//   'in-scope'  only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS, so
-//               issues in compartments whose existence is the secret stay
-//               indistinguishable from missing keys;
+//   'in-scope'  only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS;
 //   'all'       every issue hidden by a security level;
 //   'any-issue' every issue the viewer cannot browse, level or not.
-final String RESTRICTED_SCOPE = 'all'
+// Issues outside the scope keep the generic card. The 'missing' card ("no
+// issue has this key") answers ONLY at 'any-issue' with 'restricted' also in
+// MODE_ORDER: at a narrower scope it would sit next to generic cards for
+// existing issues and confirm that every one of them exists. So at
+// 'in-scope' and 'all' a missing key and an issue outside the scope look the
+// same. Any other value keeps both modes silent.
+final String RESTRICTED_SCOPE = 'any-issue'
 
 // Every piece of text the card shows, in one place. {placeholders} are filled
 // in by the card: {key} issue key, {oldKey} its former key, {project} project
@@ -331,24 +340,29 @@ def isInternal = { u ->
 //
 // OFF unless 'restricted' is in MODE_ORDER. Put it after 'secured' to use it
 // as the fallback when the restricted card has nothing safe to say, or alone
-// (profile exists-only). It deliberately relaxes the rule that a viewer who
-// fails the gates cannot tell a hidden issue from a missing key: for the
-// audience below, it can. docs/DESIGN.md, "Existence only".
+// (profile exists-only). docs/DESIGN.md, "Existence only".
 //
 // Audience: the viewer passes the internal-viewer policy and holds
 // application access. Scope, by RESTRICTED_SCOPE:
-//   'in-scope'   only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS, so
-//                issues in compartments whose existence is the secret stay
-//                indistinguishable from missing keys (default);
+//   'in-scope'   issues whose level is in SECURED_SCHEMES and not in
+//                SECURED_SKIP_LEVELS (default);
 //   'all'        every issue hidden by a security level;
-//   'any-issue'  every issue the viewer cannot browse, level or not.
-// Reveals: that the issue exists and the viewer lacks permission. The key is
-// already in the URL.
+//   'any-issue'  every issue the viewer cannot browse, level or not (the
+//                only scope at which modes/missing answers).
+// An unknown value keeps this mode silent. Issues outside the scope keep the
+// generic card, which is also what a missing key gets at these scopes, so
+// they stay indistinguishable from missing keys.
+// Reveals: that the issue exists and the viewer lacks permission. The card
+// repeats the key the viewer used (ctx.urlKey), never the canonical key: an
+// issue reached through an old key after a move would otherwise reveal its
+// new project. Archived projects are not excluded: the statement is true for
+// them too, and no advice is given that would need an editable issue.
 
 MODES['restricted'] = { ctx ->
     def issue = ctx.issue
     def user  = ctx.user
     if (issue == null) { return null }
+    if (!(RESTRICTED_SCOPE in ['in-scope', 'all', 'any-issue'])) { return null }
     if (!isInternal(user) || !hasAppAccess(user)) { return null }
     Long levelId = issue.getSecurityLevelId()
     if (RESTRICTED_SCOPE != 'any-issue') {
@@ -363,7 +377,8 @@ MODES['restricted'] = { ctx ->
                 levelsToSkip.contains(levelId as Long)) { return null }
         }
     }
-    return [mode: 'restricted', issueKey: issue.getKey(), issueUrl: '/browse/' + issue.getKey(),
+    String shownKey = ctx.urlKey ?: issue.getKey()
+    return [mode: 'restricted', issueKey: shownKey, issueUrl: '/browse/' + shownKey,
             fallbackUrl: escalationFor(ctx.proj)]
 }
 
@@ -372,6 +387,13 @@ MODES['restricted'] = { ctx ->
 // restricted issue from a deleted or mistyped key, which the generic card
 // deliberately does not. OFF unless 'missing' is in MODE_ORDER.
 //
+// It answers ONLY when 'restricted' is in MODE_ORDER as well and
+// RESTRICTED_SCOPE is 'any-issue'. At any narrower scope an existing issue
+// outside the scope gets the generic card, and a "missing" card next to it
+// would confirm that every generic key exists: the scope would then hide the
+// wording, not the fact. So at those scopes this mode stays silent and a
+// missing key keeps the generic card, exactly like an issue outside the scope.
+//
 // Audience: the viewer passes the internal-viewer policy and holds
 // application access. Everyone else keeps the generic card, which reads the
 // same whether the key exists or not.
@@ -379,6 +401,7 @@ MODES['restricted'] = { ctx ->
 
 MODES['missing'] = { ctx ->
     if (ctx.issue != null || !ctx.key) { return null }
+    if (!(MODE_ORDER.contains('restricted') && RESTRICTED_SCOPE == 'any-issue')) { return null }
     if (!isInternal(ctx.user) || !hasAppAccess(ctx.user)) { return null }
     return [mode: 'missing', issueKey: ctx.key, helpCenter: HELP_CENTER, fallbackUrl: FALLBACK_URL]
 }
@@ -387,7 +410,10 @@ MODES['missing'] = { ctx ->
 // issue on this page. Always built in, last in the DECIDE section.
 
 // null = the page renders fine for them -> stay out of the way.
-def decide = { user, issue, String key, String pageKind ->
+// key is the canonical key of the resolved issue (or the URL's key when no
+// issue resolves); urlKey is the key as the viewer typed it, which differs
+// after a move. Modes that must not reveal a move use ctx.urlKey.
+def decide = { user, issue, String key, String pageKind, String urlKey = null ->
     def pm     = ComponentAccessor.getPermissionManager()
     def BROWSE = ProjectPermissions.BROWSE_PROJECTS
 
@@ -423,7 +449,7 @@ def decide = { user, issue, String key, String pageKind ->
     } catch (Throwable ignoredProj) {
         proj = null             // keep the generic card
     }
-    def ctx = [user: user, issue: issue, key: key, pageKind: pageKind,
+    def ctx = [user: user, issue: issue, key: key, urlKey: urlKey ?: key, pageKind: pageKind,
                proj: proj, pm: pm, BROWSE: BROWSE]
 
     // First mode in MODE_ORDER that answers wins. A mode that is not in this
@@ -524,12 +550,13 @@ try {
     def r = route(req?.getRequestURI() ?: '', cp)
     pageKind = r.pageKind
     if (pageKind) {
-        def key  = r.key
+        String urlKey = r.key
+        def key  = urlKey
         def user = ComponentAccessor.getJiraAuthenticationContext().getLoggedInUser()
         if (user) {
             def issue = key ? ComponentAccessor.getIssueManager().getIssueObject(key) : null
             if (issue != null) { key = issue.getKey() }   // canonical key, not the URL's
-            payload = prefixLinks(decide(user, issue, key, pageKind), cp)
+            payload = prefixLinks(decide(user, issue, key, pageKind, urlKey), cp)
         }
     }
 } catch (Throwable ignored) {

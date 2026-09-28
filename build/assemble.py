@@ -88,16 +88,21 @@ BANNER = """\
 //                                     stock "Snap! You can't view this page"
 //                                     (<section id="unlicensed-project-type">)
 //
-//  Modes, tried in MODE_ORDER; the generic card is the fallback:
-//   portal  - a Service Management request the viewer CAN open on the portal
-//   share   - a request the viewer cannot open, but whose reporter can add
-//             them with the portal Share button
-//   moved   - it USED to be a request but was moved out of the service desk
-//   secured - the issue's security level is what hides it: say so, point at
-//             the level's "add one person to this issue" field, and name who
-//             can fill it in (only when every gate in docs/DESIGN.md holds)
-//   generic - anything else -> Help Center + raise a request; identical for a
-//             hidden issue and for a key that does not exist
+//  Modes built into this file: {modes_built}.
+//  Tried in MODE_ORDER; the generic card is the fallback. The full set:
+//   portal     - a Service Management request the viewer CAN open on the portal
+//   share      - a request the viewer cannot open, but whose reporter can add
+//                them with the portal Share button
+//   moved      - it USED to be a request but was moved out of the service desk
+//   secured    - the issue's security level is what hides it: say so, point at
+//                the level's "add one person to this issue" field, and name who
+//                can fill it in (only when every gate in docs/DESIGN.md holds)
+//   restricted - existence only: the issue exists and the viewer may not see
+//                it, nothing else (off unless listed in MODE_ORDER)
+//   missing    - no issue has this key (off unless listed; answers only at
+//                RESTRICTED_SCOPE 'any-issue' with restricted also listed)
+//   generic    - anything else -> Help Center + raise a request; identical for
+//                a hidden issue and for a key that does not exist
 //
 //  Properties that hold for every mode: the payload defaults to the generic
 //  card BEFORE any lookup, so an exception degrades to a usable card; the JSON
@@ -261,7 +266,8 @@ def assemble(prof: dict, pname: str) -> str:
     render = render.replace(CLIENT_MARKER, client_script())
 
     out: list[str] = [BANNER.format(version=VERSION, profile=prof['name'],
-                                    modules=', '.join(prof['modules']))]
+                                    modules=', '.join(prof['modules']),
+                                    modes_built=', '.join(n for n, _ in modes) or 'none (generic only)')]
     out.append('\n'.join(imports) + '\n\n')
     out.append('// >>> CONFIG =================================================================\n')
     out.append(config.strip('\n') + '\n\n')

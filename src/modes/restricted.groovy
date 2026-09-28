@@ -6,19 +6,23 @@
 //
 // OFF unless 'restricted' is in MODE_ORDER. Put it after 'secured' to use it
 // as the fallback when the restricted card has nothing safe to say, or alone
-// (profile exists-only). It deliberately relaxes the rule that a viewer who
-// fails the gates cannot tell a hidden issue from a missing key: for the
-// audience below, it can. docs/DESIGN.md, "Existence only".
+// (profile exists-only). docs/DESIGN.md, "Existence only".
 //
 // Audience: the viewer passes the internal-viewer policy and holds
 // application access. Scope, by RESTRICTED_SCOPE:
-//   'in-scope'   only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS, so
-//                issues in compartments whose existence is the secret stay
-//                indistinguishable from missing keys (default);
+//   'in-scope'   issues whose level is in SECURED_SCHEMES and not in
+//                SECURED_SKIP_LEVELS (default);
 //   'all'        every issue hidden by a security level;
-//   'any-issue'  every issue the viewer cannot browse, level or not.
-// Reveals: that the issue exists and the viewer lacks permission. The key is
-// already in the URL.
+//   'any-issue'  every issue the viewer cannot browse, level or not (the
+//                only scope at which modes/missing answers).
+// An unknown value keeps this mode silent. Issues outside the scope keep the
+// generic card, which is also what a missing key gets at these scopes, so
+// they stay indistinguishable from missing keys.
+// Reveals: that the issue exists and the viewer lacks permission. The card
+// repeats the key the viewer used (ctx.urlKey), never the canonical key: an
+// issue reached through an old key after a move would otherwise reveal its
+// new project. Archived projects are not excluded: the statement is true for
+// them too, and no advice is given that would need an editable issue.
 // provides: mode:restricted
 // requires: isInternal hasAppAccess passesSecurity escalationFor
 import com.atlassian.jira.component.ComponentAccessor
@@ -28,6 +32,7 @@ MODES['restricted'] = { ctx ->
     def issue = ctx.issue
     def user  = ctx.user
     if (issue == null) { return null }
+    if (!(RESTRICTED_SCOPE in ['in-scope', 'all', 'any-issue'])) { return null }
     if (!isInternal(user) || !hasAppAccess(user)) { return null }
     Long levelId = issue.getSecurityLevelId()
     if (RESTRICTED_SCOPE != 'any-issue') {
@@ -42,6 +47,7 @@ MODES['restricted'] = { ctx ->
                 levelsToSkip.contains(levelId as Long)) { return null }
         }
     }
-    return [mode: 'restricted', issueKey: issue.getKey(), issueUrl: '/browse/' + issue.getKey(),
+    String shownKey = ctx.urlKey ?: issue.getKey()
+    return [mode: 'restricted', issueKey: shownKey, issueUrl: '/browse/' + shownKey,
             fallbackUrl: escalationFor(ctx.proj)]
 }

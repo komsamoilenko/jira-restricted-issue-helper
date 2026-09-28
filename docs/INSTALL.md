@@ -4,7 +4,7 @@ You install one file: `dist/<profile>.groovy`, with your values in its `CONFIG` 
 
 There are two ways to get that file:
 
-- **Without Python.** Take one of the five assembled profiles in `dist/` as it is and edit only its `CONFIG` block.
+- **Without Python.** Take one of the six assembled profiles in `dist/` as it is and edit only its `CONFIG` block.
 - **With Python 3.10 or later.** Change a profile or the modules in `src/`, rebuild with `build/assemble.py`, and run the build and test tools before you deploy.
 
 ## Requirements
@@ -68,7 +68,7 @@ The first command must end with `CLEAN`. The second copies the sections of your 
 2. `tests/decision_test.groovy` needs a few real accounts and issues that match its scenarios; replace the synthetic ones first, and adjust the expectations your profile changes.
 3. `tests/decision_test_secured_off.groovy` proves the kill switch.
 
-All three are read-only.
+All four are read-only.
 
 Without Python: the committed tests hold the sections of `dist/full.groovy` with the placeholder values. `tests/render_test.groovy` still runs as it is and shows every card with the default text. The decision tests are only meaningful with your CONFIG values and your profile's logic, so either run `build/sync_tests.py` once on any machine with Python, or rely on the checks after saving (step 5). The assembled files in `dist/` passed the client-comment check when they were built.
 
@@ -88,7 +88,7 @@ In Jira, go to **Administration > ScriptRunner > Fragments** and create a new fr
 ## 5. Check after saving
 
 1. Open an issue you can see: no card, and no `jbh-style` element in the page.
-2. Open `/browse/NOPE-99999` (any key that does not exist): the generic card.
+2. Open `/browse/NOPE-99999` (any key that does not exist): the generic card (with the `exists-only` profile, an internal viewer with application access gets the `missing` card instead).
 3. Open a restricted issue as a test account that should get the restricted card, and as one that should not.
 4. View the page source of a card page and confirm the inline script has no comment lines.
 
