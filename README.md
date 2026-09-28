@@ -17,7 +17,7 @@ The real fix is usually small. Many security levels also grant access through a 
 As far as I could find:
 
 - The field is not a trick of this project. A multi-user picker field on a security level is Atlassian's documented workaround for [JRASERVER-45488](https://jira.atlassian.com/browse/JRASERVER-45488) (watchers cannot see issues under a security level, 126 votes at the time of writing), and the mechanism behind [JSDSERVER-3948](https://jira.atlassian.com/browse/JSDSERVER-3948) (request participants cannot see issues under a security level, 367 votes). The card only tells a blocked viewer that such a field exists and who can fill it in.
-- A "request access" button for Data Center has been requested since 2016 in [JRASERVER-59366](https://jira.atlassian.com/browse/JRASERVER-59366), which is at Gathering Interest with 57 votes. Jira Cloud now has a native Request access button on a work item you can't view: the request goes to the project administrators and grants a project role. The field this card points at opens one issue, not a project.
+- A "request access" button for Data Center has been requested since 2016 in [JRASERVER-59366](https://jira.atlassian.com/browse/JRASERVER-59366), which is at Gathering Interest with 57 votes. Jira Cloud now has a native Request access button on a work item you can't view: it sends the request to the project administrators, who can approve it by assigning a project role. The field this card points at opens one issue, not a project.
 - No Marketplace app replaces this page on Data Center. The built-in Permission Helper answers the question for administrators only.
 
 ## What the card does
