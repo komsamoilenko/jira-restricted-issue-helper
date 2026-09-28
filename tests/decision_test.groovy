@@ -220,16 +220,26 @@ def mailOf = { u ->
     return m.contains('@') ? m : u.getName()
 }
 
-// Application access: true for an account that holds any licensed application
-// role (Jira Software, Jira Core, a Service Management agent seat), false for
-// portal-only customers and for anonymous. This is the "is not a portal-only
-// customer" gate of the share, moved and secured cards. 1.0.0 asked
-// GlobalPermissionKey.USE for the same thing; that key has been deprecated
-// since Jira 7.0, and ApplicationRoleManager.hasAnyRole is its documented
-// successor (present unchanged from Jira 8.0 to 11.x).
+// Application access: true for an ACTIVE account that holds any licensed
+// application role (Jira Software, Jira Core, a Service Management agent
+// seat), false for portal-only customers, deactivated accounts and anonymous.
+// This is the "is not a portal-only customer" gate of the share, moved and
+// secured cards. 1.0.0 asked GlobalPermissionKey.USE for the same thing; that
+// key has been deprecated since Jira 7.0, and ApplicationRoleManager.hasAnyRole
+// is its documented successor (present unchanged from Jira 8.0 to 11.x).
+// hasAnyRole does not look at the account's status: a deactivated account
+// that is still in a licensed group answers true, where USE answered false
+// (measured on 2 676 accounts, 296 of them deactivated with a role). The
+// isActive() check restores the exact 1.0.0 behaviour.
 def hasAppAccess = { u ->
-    u != null && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
+    u != null && u.isActive() && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
 }
+
+// Test hook. Deployed, this stays null and costs nothing. The decision tests
+// set it to a list before calling decide(), and decide() then records every
+// exception a mode swallowed, so a mode that always throws cannot pass a
+// negative test by accident.
+def MODE_ERRORS = null
 
 // Does this viewer pass the issue's security level? True when the issue has
 // none. getUsersSecurityLevels is documented as "can be null", hence ?: [].
@@ -592,13 +602,14 @@ def decide = { user, issue, String key, String pageKind ->
     // First mode in MODE_ORDER that answers wins. A mode that is not in this
     // build is skipped; a mode that throws is treated as "no answer".
     for (String name : MODE_ORDER) {
-        def mode = MODES[name] as Closure
-        if (mode == null) { continue }
         def answer = null
         try {
+            def mode = MODES[name] as Closure
+            if (mode == null) { continue }
             answer = mode(ctx)
-        } catch (Throwable ignoredMode) {
+        } catch (Throwable modeFailed) {
             answer = null
+            if (MODE_ERRORS != null) { MODE_ERRORS.add(name + ': ' + modeFailed) }
         }
         if (answer instanceof Map && answer.mode) {
             payload = answer
@@ -622,6 +633,10 @@ def decide = { user, issue, String key, String pageKind ->
 //  svc-robot             service account that holds application access, outside the policy
 //  mailonly              username outside the policy, e-mail inside it
 //  dave@example.com      internal viewer already added to DEMO-101's field
+//  norole@example.com    internal by the policy, but WITHOUT application
+//                        access (in no licensed group)
+//  former@example.com    DEACTIVATED internal account still in a licensed
+//                        group (getUserByName returns inactive users too)
 //
 //  DEMO-101  level "Project team only" (scheme in SECURED_SCHEMES), grants
 //            on the multi-user field "Can also see", which is on the edit
@@ -637,72 +652,100 @@ def decide = { user, issue, String key, String pageKind ->
 //  HELP-201  request alice can open on the portal (she is a participant)
 //  HELP-202  request alice is not on; its reporter can share it
 //  HELP-203  request on the level "Project team only"
-//  NOPE-99999  does not exist
+//  NOPE-99999  does not exist (the only key that may be missing: every other
+//              case is SKIPPED, not passed, when its key does not resolve)
+//
+//  Case fields: user, key, page, then ONE of
+//   expect: [mode: ..., other keys]   every listed key must match
+//   expect: null                      no card at all
+//  and optional preconditions, checked before decide() and reported as SKIP
+//  when the data does not match the scenario: needsLevel (the issue carries a
+//  security level), needsNoLevel, needsArchived (its project is archived),
+//  needsInactive (the account is deactivated), missing (the key must not exist).
 def TWO_PEOPLE = [[name: 'Bob Example', role: 'reporter'], [name: 'Carol Example', role: 'assignee']]
 
 def CASES = [
   [name: 'T01 internal viewer x restricted issue, field on screen, two helpers -> secured',
-   user: 'alice@example.com', key: 'DEMO-101', page: 'browse',
+   user: 'alice@example.com', key: 'DEMO-101', page: 'browse', needsLevel: true,
    expect: [mode: 'secured', issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101',
             levelName: 'Project team only', fieldName: 'Can also see', hasField: true,
-            people: TWO_PEOPLE, myMail: 'alice@example.com']],
+            people: TWO_PEOPLE, myMail: 'alice@example.com', fallbackUrl: FALLBACK_URL]],
   [name: 'T02 same viewer and issue on the agent page -> secured',
-   user: 'alice@example.com', key: 'DEMO-101', page: 'agent',
+   user: 'alice@example.com', key: 'DEMO-101', page: 'agent', needsLevel: true,
    expect: [mode: 'secured', fieldName: 'Can also see']],
   [name: 'T03 the reporter (can see the issue) -> no card',
    user: 'bob@example.com', key: 'DEMO-101', page: 'browse', expect: null],
   [name: 'T04 a viewer already added to the field -> no card',
    user: 'dave@example.com', key: 'DEMO-101', page: 'browse', expect: null],
   [name: 'T05 reporter inactive, no assignee -> secured, field, nobody named',
-   user: 'alice@example.com', key: 'DEMO-102', page: 'browse',
-   expect: [mode: 'secured', fieldName: 'Can also see', people: []]],
+   user: 'alice@example.com', key: 'DEMO-102', page: 'browse', needsLevel: true,
+   expect: [mode: 'secured', fieldName: 'Can also see', hasField: true, people: []]],
   [name: 'T06 level with no multi-user grant field on the edit screen -> secured, no field',
-   user: 'alice@example.com', key: 'DEMO-103', page: 'browse',
+   user: 'alice@example.com', key: 'DEMO-103', page: 'browse', needsLevel: true,
    expect: [mode: 'secured', fieldName: null, hasField: false, people: []]],
   [name: 'T07 Service Management request on a restricted level -> secured, not generic',
-   user: 'alice@example.com', key: 'HELP-203', page: 'browse',
+   user: 'alice@example.com', key: 'HELP-203', page: 'browse', needsLevel: true,
    expect: [mode: 'secured', levelName: 'Project team only']],
   [name: 'T08 portal-only customer (no application access) x restricted request -> generic, never secured',
-   user: 'customer@example.org', key: 'HELP-203', page: 'browse', expect: [mode: 'generic']],
+   user: 'customer@example.org', key: 'HELP-203', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
   [name: 'T09 portal-only customer x restricted issue in another project -> generic',
-   user: 'customer@example.org', key: 'DEMO-101', page: 'browse', expect: [mode: 'generic']],
+   user: 'customer@example.org', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
   [name: 'T10 request the viewer can open on the portal, agent page -> portal',
    user: 'alice@example.com', key: 'HELP-201', page: 'agent',
-   expect: [mode: 'portal', portalUrl: '/servicedesk/customer/portal/1/HELP-201']],
+   expect: [mode: 'portal', portalUrl: '/servicedesk/customer/portal/1/HELP-201',
+            myRequests: MY_REQUESTS, fallbackUrl: FALLBACK_URL]],
   [name: 'T11 same request on /browse/ -> portal',
    user: 'alice@example.com', key: 'HELP-201', page: 'browse',
    expect: [mode: 'portal', portalUrl: '/servicedesk/customer/portal/1/HELP-201']],
   [name: 'T12 request the viewer is not on, reporter can share -> share',
    user: 'alice@example.com', key: 'HELP-202', page: 'browse',
-   expect: [mode: 'share', issueKey: 'HELP-202']],
+   expect: [mode: 'share', issueKey: 'HELP-202', portalUrl: '/servicedesk/customer/portal/1/HELP-202',
+            reporterName: 'Bob Example', myMail: 'alice@example.com', fallbackUrl: FALLBACK_URL]],
   [name: 'T13 issue moved out of a service desk -> moved',
    user: 'alice@example.com', key: 'DEMO-150', page: 'browse',
-   expect: [mode: 'moved', issueKey: 'DEMO-150']],
+   expect: [mode: 'moved', issueKey: 'DEMO-150', issueUrl: '/browse/DEMO-150',
+            projectName: 'Demo Project', oldKey: 'HELP-150', fallbackUrl: FALLBACK_URL]],
   [name: 'T14 no such issue -> generic',
-   user: 'alice@example.com', key: 'NOPE-99999', page: 'browse', expect: [mode: 'generic']],
+   user: 'alice@example.com', key: 'NOPE-99999', page: 'browse', missing: true,
+   expect: [mode: 'generic', helpCenter: HELP_CENTER, fallbackUrl: FALLBACK_URL]],
   [name: 'T15 agent who can browse, agent page -> no card',
    user: 'agent@example.com', key: 'HELP-201', page: 'agent', expect: null],
   // ---- the gates of the restricted card: each of these must stay generic ----
   [name: 'X01 external account holding application access x restricted issue -> generic',
-   user: 'contractor@example.org', key: 'DEMO-101', page: 'browse', expect: [mode: 'generic']],
+   user: 'contractor@example.org', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
   [name: 'X02 service account holding application access x restricted issue -> generic',
-   user: 'svc-robot', key: 'DEMO-101', page: 'browse', expect: [mode: 'generic']],
-  [name: 'X03 e-mail inside the policy, username outside it -> never secured',
-   user: 'mailonly', key: 'DEMO-101', page: 'browse', notMode: 'secured'],
-  [name: 'X04 level listed in SECURED_SKIP_LEVELS -> never secured',
-   user: 'alice@example.com', key: 'DEMO-104', page: 'browse', notMode: 'secured'],
+   user: 'svc-robot', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
+  [name: 'X03 e-mail inside the policy, username outside it -> generic',
+   user: 'mailonly', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
+  [name: 'X04 level listed in SECURED_SKIP_LEVELS -> generic',
+   user: 'alice@example.com', key: 'DEMO-104', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
   [name: 'X05 level in a scheme outside SECURED_SCHEMES -> generic',
-   user: 'alice@example.com', key: 'DEMO-105', page: 'browse', expect: [mode: 'generic']],
+   user: 'alice@example.com', key: 'DEMO-105', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
   [name: 'X06 restricted issue in an archived project -> generic',
-   user: 'alice@example.com', key: 'RETIRED-1', page: 'browse', expect: [mode: 'generic']],
-  [name: 'X07 viewer the permission scheme would not let in anyway -> never secured',
-   user: 'alice@example.com', key: 'CLOSED-7', page: 'browse', notMode: 'secured'],
+   user: 'alice@example.com', key: 'RETIRED-1', page: 'browse', needsLevel: true, needsArchived: true,
+   expect: [mode: 'generic']],
+  [name: 'X07 viewer the permission scheme would not let in anyway -> generic',
+   user: 'alice@example.com', key: 'CLOSED-7', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
+  // ---- the application-access gate on its own: internal by the policy, so
+  //      only hasAppAccess can stop the card. Each must stay generic. ----
+  [name: 'X08 internal viewer WITHOUT application access x restricted issue -> generic',
+   user: 'norole@example.com', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
+  [name: 'X09 deactivated internal account x restricted issue -> generic',
+   user: 'former@example.com', key: 'DEMO-101', page: 'browse', needsLevel: true, needsInactive: true,
+   expect: [mode: 'generic']],
+  [name: 'X10 deactivated internal account x request with a usable reporter -> generic, never share',
+   user: 'former@example.com', key: 'HELP-202', page: 'browse', needsInactive: true,
+   expect: [mode: 'generic']],
+  [name: 'X11 deactivated internal account x issue moved out of a service desk -> generic, never moved',
+   user: 'former@example.com', key: 'DEMO-150', page: 'browse', needsInactive: true,
+   expect: [mode: 'generic']],
 ]
 
 def um = ComponentAccessor.getUserManager()
 def im = ComponentAccessor.getIssueManager()
 def out = new StringBuilder()
 int pass = 0, fail = 0, skip = 0
+MODE_ERRORS = []            // decide() records every exception a mode swallowed
 CASES.each { c ->
     def u = um.getUserByName(c.user)
     if (u == null) {
@@ -711,9 +754,29 @@ CASES.each { c ->
         return
     }
     def issue = im.getIssueObject(c.key)
+    // Preconditions: the data must match the scenario, or the case proves
+    // nothing. A key that does not resolve gives the generic card for every
+    // viewer, so it is a SKIP unless the case says the key must be missing.
+    String why = null
+    if (c.missing) {
+        if (issue != null) { why = 'key exists, but the case needs a missing one: ' + c.key }
+    } else if (issue == null) {
+        why = 'no such issue: ' + c.key
+    } else {
+        if (c.needsLevel && issue.getSecurityLevelId() == null) { why = c.key + ' has no security level' }
+        if (c.needsNoLevel && issue.getSecurityLevelId() != null) { why = c.key + ' has a security level' }
+        if (c.needsArchived && !issue.getProjectObject()?.isArchived()) { why = c.key + ' is not in an archived project' }
+    }
+    if (c.needsInactive && u.isActive()) { why = c.user + ' is active, but the case needs a deactivated account' }
+    if (why != null) {
+        skip++
+        out.append('SKIP ' + c.name + '  [' + why + ']\n')
+        return
+    }
     String key = issue != null ? issue.getKey() : c.key
     def got = null
     String err = null
+    MODE_ERRORS.clear()
     long t0 = System.currentTimeMillis()
     try {
         got = decide(u, issue, key, c.page)
@@ -724,8 +787,6 @@ CASES.each { c ->
     def problems = []
     if (err != null) {
         problems << ('threw ' + err)
-    } else if (c.notMode) {
-        if (got instanceof Map && got.mode == c.notMode) { problems << ('must not be ' + c.notMode + ', got ' + got) }
     } else if (c.containsKey('expect') && c.expect == null) {
         if (got != null) { problems << ('expected no card, got ' + got) }
     } else if (!(got instanceof Map)) {
@@ -734,11 +795,17 @@ CASES.each { c ->
         (c.expect ?: [:]).each { k, v ->
             if (got[k] != v) { problems << (k + ': expected <' + v + '> got <' + got[k] + '>') }
         }
-        if (c.modeIn && !(got.mode in c.modeIn)) { problems << ('mode ' + got.mode + ' not in ' + c.modeIn) }
     }
+    // A mode that threw was silently skipped by decide(). That is right in
+    // production and wrong in a test: a mode that always throws would pass
+    // every negative case. So it fails the case here.
+    MODE_ERRORS.each { problems << ('mode threw: ' + it) }
     if (problems) { fail++ } else { pass++ }
     out.append((problems ? 'FAIL ' : 'PASS ') + c.name + '  [' + ms + ' ms]\n')
     out.append('     got: ' + (got instanceof Map ? JsonOutput.toJson(got) : String.valueOf(got)) + '\n')
     problems.each { out.append('     !! ' + it + '\n') }
 }
-return 'SUMMARY pass=' + pass + ' fail=' + fail + ' skip=' + skip + '\n' + out.toString()
+// An empty or partial run is not a pass: every case must have run and passed.
+String verdict = (fail == 0 && skip == 0 && pass > 0) ? 'OK' : 'NOT OK'
+return 'RESULT ' + verdict + '  SUMMARY pass=' + pass + ' fail=' + fail + ' skip=' + skip +
+       (verdict == 'OK' ? '' : '  (every case must run and pass; a SKIP is not a pass)') + '\n' + out.toString()

@@ -14,8 +14,9 @@ and every test marks where a copy goes:
     // <<< COPY <NAME>
 
 NAME is IMPORTS (every ``import`` line of the fragment), CONFIG, DECIDE,
-RENDER, or CONFIG_SECURED_OFF (CONFIG with the restricted-card kill switch
-turned off, for the kill-switch test).
+ROUTE (the URL routing closures of the entry point), RENDER, or
+CONFIG_SECURED_OFF (CONFIG with the restricted-card kill switch turned off,
+for the kill-switch test).
 
 Usage:
   python build/sync_tests.py            refresh every test from dist/full.groovy
@@ -58,6 +59,7 @@ def sections(src: Path) -> dict[str, str]:
         'IMPORTS': ''.join(l for l in lines if l.startswith('import ')),
         'CONFIG': section(lines, 'CONFIG'),
         'DECIDE': section(lines, 'DECIDE'),
+        'ROUTE': section(lines, 'ROUTE'),
         'RENDER': section(lines, 'RENDER'),
     }
     if out['CONFIG'].count(KILL_SWITCH_ON) != 1:

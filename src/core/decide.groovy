@@ -1,7 +1,7 @@
 // core/decide.groovy -- decides which card (if any) this user gets for this
 // issue on this page. Always built in, last in the DECIDE section.
 // provides: decide
-// requires: MODES
+// requires: MODES MODE_ERRORS
 import com.atlassian.application.api.ApplicationKey
 import com.atlassian.jira.application.ApplicationAuthorizationService
 import com.atlassian.jira.component.ComponentAccessor
@@ -50,13 +50,14 @@ def decide = { user, issue, String key, String pageKind ->
     // First mode in MODE_ORDER that answers wins. A mode that is not in this
     // build is skipped; a mode that throws is treated as "no answer".
     for (String name : MODE_ORDER) {
-        def mode = MODES[name] as Closure
-        if (mode == null) { continue }
         def answer = null
         try {
+            def mode = MODES[name] as Closure
+            if (mode == null) { continue }
             answer = mode(ctx)
-        } catch (Throwable ignoredMode) {
+        } catch (Throwable modeFailed) {
             answer = null
+            if (MODE_ERRORS != null) { MODE_ERRORS.add(name + ': ' + modeFailed) }
         }
         if (answer instanceof Map && answer.mode) {
             payload = answer

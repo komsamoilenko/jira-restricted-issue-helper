@@ -212,16 +212,26 @@ def mailOf = { u ->
     return m.contains('@') ? m : u.getName()
 }
 
-// Application access: true for an account that holds any licensed application
-// role (Jira Software, Jira Core, a Service Management agent seat), false for
-// portal-only customers and for anonymous. This is the "is not a portal-only
-// customer" gate of the share, moved and secured cards. 1.0.0 asked
-// GlobalPermissionKey.USE for the same thing; that key has been deprecated
-// since Jira 7.0, and ApplicationRoleManager.hasAnyRole is its documented
-// successor (present unchanged from Jira 8.0 to 11.x).
+// Application access: true for an ACTIVE account that holds any licensed
+// application role (Jira Software, Jira Core, a Service Management agent
+// seat), false for portal-only customers, deactivated accounts and anonymous.
+// This is the "is not a portal-only customer" gate of the share, moved and
+// secured cards. 1.0.0 asked GlobalPermissionKey.USE for the same thing; that
+// key has been deprecated since Jira 7.0, and ApplicationRoleManager.hasAnyRole
+// is its documented successor (present unchanged from Jira 8.0 to 11.x).
+// hasAnyRole does not look at the account's status: a deactivated account
+// that is still in a licensed group answers true, where USE answered false
+// (measured on 2 676 accounts, 296 of them deactivated with a role). The
+// isActive() check restores the exact 1.0.0 behaviour.
 def hasAppAccess = { u ->
-    u != null && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
+    u != null && u.isActive() && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
 }
+
+// Test hook. Deployed, this stays null and costs nothing. The decision tests
+// set it to a list before calling decide(), and decide() then records every
+// exception a mode swallowed, so a mode that always throws cannot pass a
+// negative test by accident.
+def MODE_ERRORS = null
 
 // Does this viewer pass the issue's security level? True when the issue has
 // none. getUsersSecurityLevels is documented as "can be null", hence ?: [].
@@ -584,13 +594,14 @@ def decide = { user, issue, String key, String pageKind ->
     // First mode in MODE_ORDER that answers wins. A mode that is not in this
     // build is skipped; a mode that throws is treated as "no answer".
     for (String name : MODE_ORDER) {
-        def mode = MODES[name] as Closure
-        if (mode == null) { continue }
         def answer = null
         try {
+            def mode = MODES[name] as Closure
+            if (mode == null) { continue }
             answer = mode(ctx)
-        } catch (Throwable ignoredMode) {
+        } catch (Throwable modeFailed) {
             answer = null
+            if (MODE_ERRORS != null) { MODE_ERRORS.add(name + ': ' + modeFailed) }
         }
         if (answer instanceof Map && answer.mode) {
             payload = answer
@@ -618,6 +629,7 @@ def um = ComponentAccessor.getUserManager()
 def im = ComponentAccessor.getIssueManager()
 def out = new StringBuilder()
 int pass = 0, fail = 0, skip = 0
+MODE_ERRORS = []            // decide() records every exception a mode swallowed
 CASES.each { c ->
     def u = um.getUserByName(c.user)
     if (u == null) {
@@ -626,9 +638,17 @@ CASES.each { c ->
         return
     }
     def issue = im.getIssueObject(c.key)
-    String key = issue != null ? issue.getKey() : c.key
+    if (issue == null) {
+        // A key that does not resolve gives the generic card for every
+        // viewer, which would make every case here pass for the wrong reason.
+        skip++
+        out.append('SKIP ' + c.name + '  [no such issue: ' + c.key + ']\n')
+        return
+    }
+    String key = issue.getKey()
     def got = null
     String err = null
+    MODE_ERRORS.clear()
     try {
         got = decide(u, issue, key, c.page)
     } catch (Throwable t) {
@@ -644,9 +664,12 @@ CASES.each { c ->
             if (got[k] != v) { problems << (k + ': expected <' + v + '> got <' + got[k] + '>') }
         }
     }
+    MODE_ERRORS.each { problems << ('mode threw: ' + it) }
     if (problems) { fail++ } else { pass++ }
     out.append((problems ? 'FAIL ' : 'PASS ') + c.name + '\n')
     out.append('     got: ' + (got instanceof Map ? JsonOutput.toJson(got) : String.valueOf(got)) + '\n')
     problems.each { out.append('     !! ' + it + '\n') }
 }
-return 'SUMMARY pass=' + pass + ' fail=' + fail + ' skip=' + skip + '\n' + out.toString()
+String verdict = (fail == 0 && skip == 0 && pass > 0) ? 'OK' : 'NOT OK'
+return 'RESULT ' + verdict + '  SUMMARY pass=' + pass + ' fail=' + fail + ' skip=' + skip +
+       (verdict == 'OK' ? '' : '  (every case must run and pass; a SKIP is not a pass)') + '\n' + out.toString()

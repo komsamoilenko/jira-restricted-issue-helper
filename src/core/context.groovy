@@ -1,5 +1,5 @@
 // core/context.groovy -- shared helpers and the mode registry.
-// provides: MODES mailOf hasAppAccess passesSecurity isServiceDeskProject hasRequestType escalationFor
+// provides: MODES MODE_ERRORS mailOf hasAppAccess passesSecurity isServiceDeskProject hasRequestType escalationFor
 // Always built in, first in the DECIDE section. Everything here is read-only.
 import com.atlassian.jira.application.ApplicationRoleManager
 import com.atlassian.jira.component.ComponentAccessor
@@ -18,16 +18,26 @@ def mailOf = { u ->
     return m.contains('@') ? m : u.getName()
 }
 
-// Application access: true for an account that holds any licensed application
-// role (Jira Software, Jira Core, a Service Management agent seat), false for
-// portal-only customers and for anonymous. This is the "is not a portal-only
-// customer" gate of the share, moved and secured cards. 1.0.0 asked
-// GlobalPermissionKey.USE for the same thing; that key has been deprecated
-// since Jira 7.0, and ApplicationRoleManager.hasAnyRole is its documented
-// successor (present unchanged from Jira 8.0 to 11.x).
+// Application access: true for an ACTIVE account that holds any licensed
+// application role (Jira Software, Jira Core, a Service Management agent
+// seat), false for portal-only customers, deactivated accounts and anonymous.
+// This is the "is not a portal-only customer" gate of the share, moved and
+// secured cards. 1.0.0 asked GlobalPermissionKey.USE for the same thing; that
+// key has been deprecated since Jira 7.0, and ApplicationRoleManager.hasAnyRole
+// is its documented successor (present unchanged from Jira 8.0 to 11.x).
+// hasAnyRole does not look at the account's status: a deactivated account
+// that is still in a licensed group answers true, where USE answered false
+// (measured on 2 676 accounts, 296 of them deactivated with a role). The
+// isActive() check restores the exact 1.0.0 behaviour.
 def hasAppAccess = { u ->
-    u != null && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
+    u != null && u.isActive() && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
 }
+
+// Test hook. Deployed, this stays null and costs nothing. The decision tests
+// set it to a list before calling decide(), and decide() then records every
+// exception a mode swallowed, so a mode that always throws cannot pass a
+// negative test by accident.
+def MODE_ERRORS = null
 
 // Does this viewer pass the issue's security level? True when the issue has
 // none. getUsersSecurityLevels is documented as "can be null", hence ?: [].

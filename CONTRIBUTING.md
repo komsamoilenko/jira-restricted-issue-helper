@@ -26,7 +26,7 @@ Commit `dist/` and the tests as they come out of the build. The tests in the rep
 
 The three tests in [tests/](tests/) run in the ScriptRunner Script Console and only read. [tests/README.md](tests/README.md) has the details.
 
-1. `tests/render_test.groovy` needs no users or issues. Run it first: it renders every card variant, and a compilation error shows up here.
+1. `tests/render_test.groovy` and `tests/route_test.groovy` need no users or issues. Run them first: the render test renders every card variant and a compilation error shows up here; the route test must end with `RESULT OK`.
 2. `tests/decision_test.groovy` runs `decide()`, exactly as deployed, for viewer and issue pairs. Replace the synthetic accounts and keys in `CASES` with ones on your instance that match each scenario.
 3. `tests/decision_test_secured_off.groovy` proves that `SECURED_CARD = false` restores the generic card.
 

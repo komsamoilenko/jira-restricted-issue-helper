@@ -63,7 +63,7 @@ python build/sync_tests.py --source <your file>
 
 The first command must end with `CLEAN`. The second copies the sections of your file, your CONFIG values included, into the three tests. Then run the tests in the Script Console as described in [tests/README.md](../tests/README.md):
 
-1. `tests/render_test.groovy` needs no data and shows every card variant as the browser receives it.
+1. `tests/render_test.groovy` needs no data and shows every card variant as the browser receives it. `tests/route_test.groovy` needs no data either and must end with `RESULT OK`.
 2. `tests/decision_test.groovy` needs a few real accounts and issues that match its scenarios; replace the synthetic ones first, and adjust the expectations your profile changes.
 3. `tests/decision_test_secured_off.groovy` proves the kill switch.
 

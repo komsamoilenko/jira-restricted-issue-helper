@@ -82,7 +82,7 @@ Cheapest first; the first failure returns no answer, and the viewer keeps the ge
 | Switch off | Payload | What the card says instead |
 |---|---|---|
 | `levelName` | `levelName` is empty | "a security level" (`levelUnnamed`) |
-| `fieldName` | `fieldName` is null, `hasField` is true | that anyone who can edit the issue can add the viewer to it, with no field name, and a copy-ready message that asks for "the field on the issue that lets one more person see it" (`securedLeadFieldUnnamed`, `securedMessageFieldUnnamed`) |
+| `fieldName` | `fieldName` is null, `hasField` is true | that the issue has a field for letting one more person in, without naming it, and a copy-ready message that asks for "the field on the issue that lets one more person see it" (`securedLeadFieldUnnamed`, `securedMessageFieldUnnamed`) |
 | `people` | `people` is empty | nobody named; "send the message below to whoever shared the link with you" (`securedLeadNobody`) |
 
 A withheld value is not computed into the payload, so it never reaches the browser, not even in the page source. A key missing from the map counts as off. `DISCLOSURE_BY_LEVEL` overrides the global map per level id, in both directions.

@@ -20,7 +20,9 @@ Modular source, five ready-made profiles, disclosure switches, and a compatibili
 
 ### Changed
 
-- `GlobalPermissionKey.USE`, deprecated since Jira 7.0, is no longer used. The "has application access" gate of the share, moved and secured cards is `ApplicationRoleManager.hasAnyRole(user)`, present unchanged from Jira 8.0 to 11.x. Run the decision test's T08, T09, X01 and X02 after upgrading.
+- `GlobalPermissionKey.USE`, deprecated since Jira 7.0, is no longer used. The "has application access" gate of the share, moved and secured cards is `user.isActive()` plus `ApplicationRoleManager.hasAnyRole(user)`, both present unchanged from Jira 8.0 to 11.x. `hasAnyRole` alone does not look at the account's status: on a census of 2 676 accounts on one instance it answered true for 296 deactivated accounts where `USE` answered false; with `isActive()` the two agree for every account. Run the decision test's X08 to X11 after upgrading.
+- The entry point's URL routing lives in two pure closures, `route()` and `prefixLinks()`, and asks each regular-expression matcher exactly once (`find()`, then `group(1)`). 1.0.0 evaluated the same matcher twice in boolean context, once for the page and once for the key; in Groovy that calls `find()` twice, and `Matcher.find()` continues after the previous match. Whether that ever cost 1.0.0 a key on a live instance is not verified; `tests/route_test.groovy` now pins the routing down for twenty URLs so that it cannot.
+- `decide()` records the exceptions it swallows when a test asks it to (`MODE_ERRORS`), so a mode that always throws cannot pass a negative test by accident. Deployed, the hook is null and costs nothing.
 - The Service Management callable is built with Groovy's `asType` instead of a bare `java.lang.reflect.Proxy`, so the proxy answers `equals`, `hashCode` and `toString` properly.
 - `getUsersSecurityLevels`, documented as "can be null", is guarded; the permission scheme lookup is null-checked.
 - Permission keys use the `ProjectPermissions` constants instead of string literals.
@@ -28,7 +30,7 @@ Modular source, five ready-made profiles, disclosure switches, and a compatibili
 - A Jira served under a context path (for example `/jira`) is handled: the entry point strips it before matching the page and puts it back on every root-relative link the card carries. 1.0.0 rendered nothing on such an instance. Not verified on one.
 - Scheme and level ids in CONFIG are compared as `Long` whether or not they carry the `L` suffix; per-level `DISCLOSURE_BY_LEVEL` keys likewise.
 - Documentation: the fragment type is called "Show a web panel" in ScriptRunner's documentation, not "Custom web panel"; the requirements now state the Javadoc-verified range and the ScriptRunner pairing instead of "Jira 9.x, ScriptRunner 8.x (assumed)".
-- `build/sync_tests.py` reads `dist/full.groovy` by default; `tests/render_test.groovy` gained a case for a hidden field name.
+- `build/sync_tests.py` reads `dist/full.groovy` by default and also syncs the new ROUTE section. `tests/render_test.groovy` gained cases for a hidden field name and the minimal card. `tests/decision_test.groovy` gained X08 to X11 (the application-access gate on its own, including deactivated accounts), preconditions that turn a case whose data does not match the scenario into a SKIP, a `RESULT OK / NOT OK` verdict (a SKIP or an empty run is not a pass), and fuller expectations. New: `tests/route_test.groovy` and the template `tests/compare_versions.groovy`.
 
 ### Removed
 

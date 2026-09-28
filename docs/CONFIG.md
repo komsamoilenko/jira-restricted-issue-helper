@@ -125,7 +125,7 @@ With Python, a profile can reword single entries (`TEXT.genericEscalate = '...'`
 | `levelUnnamed` | a security level | fills `{levelPhrase}` when the level has no name or `DISCLOSURE` withholds it | |
 | `securedLead` | {key} is protected by {levelPhrase}, ... | restricted card, first sentence | `{key}`, `{levelPhrase}` |
 | `securedLeadField` | You do not have to join them: being added to its "{field}" field ... | restricted card, when there is a field and its name may be shown | `{field}` |
-| `securedLeadFieldUnnamed` | You do not have to join them: anyone who can edit the issue can add you to it, ... | restricted card, when there is a field but `DISCLOSURE` withholds its name. New in 1.1.0 | |
+| `securedLeadFieldUnnamed` | You do not have to join them: this issue has a field for letting one more person in, ... | restricted card, when there is a field but `DISCLOSURE` withholds its name. New in 1.1.0 | |
 | `securedLeadMany` | Either of the people below can do that in a few seconds. | when two people are named | |
 | `securedLeadOne` | The person below can do that in a few seconds. | when one person is named | |
 | `securedLeadNobody` | Anyone who can edit the issue can add you, ... | when there is a field but nobody to name, including when `DISCLOSURE` withholds the people | |

@@ -135,6 +135,8 @@ build/sync_tests.py              copies the deployed sections into the tests
 tests/decision_test.groovy       decide() against viewer and issue pairs on your instance
 tests/decision_test_secured_off.groovy  the kill switch restores the generic card
 tests/render_test.groovy         every card variant, rendered from synthetic payloads
+tests/route_test.groovy          which page and key a URL names, with and without a context path
+tests/compare_versions.groovy    template: two versions of decide() over the same data
 docs/DESIGN.md                   the disclosure model and the gates
 docs/INSTALL.md                  install, upgrade, rollback
 docs/CONFIG.md                   every configurable value and text

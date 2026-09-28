@@ -238,16 +238,26 @@ def mailOf = { u ->
     return m.contains('@') ? m : u.getName()
 }
 
-// Application access: true for an account that holds any licensed application
-// role (Jira Software, Jira Core, a Service Management agent seat), false for
-// portal-only customers and for anonymous. This is the "is not a portal-only
-// customer" gate of the share, moved and secured cards. 1.0.0 asked
-// GlobalPermissionKey.USE for the same thing; that key has been deprecated
-// since Jira 7.0, and ApplicationRoleManager.hasAnyRole is its documented
-// successor (present unchanged from Jira 8.0 to 11.x).
+// Application access: true for an ACTIVE account that holds any licensed
+// application role (Jira Software, Jira Core, a Service Management agent
+// seat), false for portal-only customers, deactivated accounts and anonymous.
+// This is the "is not a portal-only customer" gate of the share, moved and
+// secured cards. 1.0.0 asked GlobalPermissionKey.USE for the same thing; that
+// key has been deprecated since Jira 7.0, and ApplicationRoleManager.hasAnyRole
+// is its documented successor (present unchanged from Jira 8.0 to 11.x).
+// hasAnyRole does not look at the account's status: a deactivated account
+// that is still in a licensed group answers true, where USE answered false
+// (measured on 2 676 accounts, 296 of them deactivated with a role). The
+// isActive() check restores the exact 1.0.0 behaviour.
 def hasAppAccess = { u ->
-    u != null && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
+    u != null && u.isActive() && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
 }
+
+// Test hook. Deployed, this stays null and costs nothing. The decision tests
+// set it to a list before calling decide(), and decide() then records every
+// exception a mode swallowed, so a mode that always throws cannot pass a
+// negative test by accident.
+def MODE_ERRORS = null
 
 // Does this viewer pass the issue's security level? True when the issue has
 // none. getUsersSecurityLevels is documented as "can be null", hence ?: [].
@@ -486,13 +496,14 @@ def decide = { user, issue, String key, String pageKind ->
     // First mode in MODE_ORDER that answers wins. A mode that is not in this
     // build is skipped; a mode that throws is treated as "no answer".
     for (String name : MODE_ORDER) {
-        def mode = MODES[name] as Closure
-        if (mode == null) { continue }
         def answer = null
         try {
+            def mode = MODES[name] as Closure
+            if (mode == null) { continue }
             answer = mode(ctx)
-        } catch (Throwable ignoredMode) {
+        } catch (Throwable modeFailed) {
             answer = null
+            if (MODE_ERRORS != null) { MODE_ERRORS.add(name + ': ' + modeFailed) }
         }
         if (answer instanceof Map && answer.mode) {
             payload = answer
@@ -507,44 +518,76 @@ def decide = { user, issue, String key, String pageKind ->
 // core/entry.groovy -- the fragment's entry point: which page is this, who is
 // looking, which issue. Always built in, between DECIDE and RENDER.
 
+// >>> ROUTE -- build/sync_tests.py copies this block into tests/route_test.groovy
+// Which page is this, and which key does it name. Pure functions of the
+// request URI and the context path, so they can be tested without a request.
+//   route(uri, cp) -> [pageKind: 'browse' | 'agent' | null, key: 'ABC-1' | null]
+// Case-insensitive; the key is then re-read from the resolved issue, because
+// Jira serves lowercase keys and a moved issue still answers on its old key.
+// A Jira served under a context path (for example /jira) reports URIs that
+// start with it: it is stripped before matching, and prefixLinks() puts it
+// back on every root-relative link the card carries.
+def route = { String rawUri, String cp ->
+    String uri = rawUri ?: ''
+    String ctxPath = cp ?: ''
+    if (ctxPath && (uri == ctxPath || uri.startsWith(ctxPath + '/'))) {
+        uri = uri.substring(ctxPath.length())
+    }
+    // Each matcher is asked exactly once: a Matcher in boolean context calls
+    // find(), and a second find() on the same matcher continues after the
+    // first match instead of starting over, so it would say "no match".
+    String kind = null
+    String key  = null
+    def mBrowse = (uri =~ '(?i)^/browse/([a-z][a-z0-9_]*-[0-9]+)')
+    if (mBrowse.find()) {
+        kind = 'browse'
+        key  = mBrowse.group(1).toUpperCase()
+    } else {
+        def mAgent = (uri =~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?/([a-z][a-z0-9_]*-[0-9]+)$')
+        if (mAgent.find()) {
+            kind = 'agent'
+            key  = mAgent.group(1).toUpperCase()
+        } else if (uri ==~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?$') {
+            kind = 'agent'
+        }
+    }
+    if (kind && !PAGES.contains(kind)) { kind = null; key = null }
+    return [pageKind: kind, key: key]
+}
+
+// Puts the context path in front of every root-relative link of a payload.
+// Protocol-relative links (//host/...) and links that already carry the
+// prefix are left alone.
+def prefixLinks = { Map p, String cp ->
+    if (p == null || !cp) { return p }
+    ['issueUrl', 'portalUrl', 'helpCenter', 'fallbackUrl', 'myRequests'].each { k ->
+        def v = p[k]
+        if (v instanceof String && v.startsWith('/') && !v.startsWith('//') && !v.startsWith(cp + '/')) {
+            p[k] = cp + v
+        }
+    }
+    return p
+}
+// <<< ROUTE
+
 def payload  = null
 String pageKind = null
 
 try {
-    // Case-insensitive, and the key is then taken from the resolved issue,
-    // not from the URL: Jira serves lowercase keys, and a moved issue still
-    // answers on its old key. `req` stays untyped on purpose: Jira 11 returns
-    // a jakarta.servlet request here, earlier versions a javax.servlet one.
+    // `req` stays untyped on purpose: Jira 11 returns a jakarta.servlet
+    // request here, earlier versions a javax.servlet one.
     def req = ExecutingHttpRequest.get()
-    def uri = req?.getRequestURI() ?: ''
-    // A Jira served under a context path (for example /jira) reports URIs
-    // that start with it. Match without it, and put it back on every
-    // root-relative link the card carries.
     String cp = req?.getContextPath() ?: ''
-    if (cp && uri.startsWith(cp)) { uri = uri.substring(cp.length()) }
-    def mBrowse = (uri =~ '(?i)^/browse/([a-z][a-z0-9_]*-[0-9]+)')
-    def mAgent  = (uri =~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?/([a-z][a-z0-9_]*-[0-9]+)$')
-    def mQueues = (uri =~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?$')
-    pageKind = mBrowse ? 'browse' : ((mAgent || mQueues) ? 'agent' : null)
-    if (pageKind && PAGES.contains(pageKind)) {
-        def key  = mBrowse ? mBrowse[0][1].toUpperCase()
-                           : (mAgent ? mAgent[0][1].toUpperCase() : null)
+    def r = route(req?.getRequestURI() ?: '', cp)
+    pageKind = r.pageKind
+    if (pageKind) {
+        def key  = r.key
         def user = ComponentAccessor.getJiraAuthenticationContext().getLoggedInUser()
         if (user) {
             def issue = key ? ComponentAccessor.getIssueManager().getIssueObject(key) : null
             if (issue != null) { key = issue.getKey() }   // canonical key, not the URL's
-            payload = decide(user, issue, key, pageKind)
-            if (payload && cp) {
-                ['issueUrl', 'portalUrl', 'helpCenter', 'fallbackUrl', 'myRequests'].each { k ->
-                    def v = payload[k]
-                    if (v instanceof String && v.startsWith('/') && !v.startsWith(cp + '/')) {
-                        payload[k] = cp + v
-                    }
-                }
-            }
+            payload = prefixLinks(decide(user, issue, key, pageKind), cp)
         }
-    } else {
-        pageKind = null
     }
 } catch (Throwable ignored) {
     payload = null          // never break a page over a helper
