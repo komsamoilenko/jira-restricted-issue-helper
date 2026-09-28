@@ -1,20 +1,47 @@
 // ============================================================================
-//  Render test for dist/full.groovy          READ-ONLY
+//  Restricted-issue helper for Jira's "You can't view this issue" page
+//  Version 1.1.0 -- ScriptRunner for Jira Data Center fragment
+//  Fragment type: "Show a web panel"   Location: atl.header.after.scripts
+//  Weight: 100   Condition: none        Licence: MIT (see LICENSE)
 // ----------------------------------------------------------------------------
-//  Renders every card variant from the deployed RENDER block (copied below by
-//  build/sync_tests.py) with synthetic payloads, and returns the markup each
-//  browser would receive. Needs no users or issues. Paste the whole file into
-//  ScriptRunner > Console and run it.
+//  ASSEMBLED FILE. Built by build/assemble.py from profile "no-jsm" with
+//  these modules: internal-mail-domain, people-reporter-assignee, secured.
+//  Do not edit it by hand: edit src/ and rebuild (docs/EXTENDING.md). Only the
+//  CONFIG block below is meant to be edited in a deployed copy.
 //
-//  What to look for in the output:
-//   - one <script> per case, and no comment line inside it;
-//   - "var d = {...}" with '<', '>' and '&' escaped as \u003c, \u003e, \u0026
-//     (the hostile case proves a value cannot close the script block);
-//   - "var T = {...}" holding your CONFIG TEXT.
-//  To see a card, save one case's <script> into a page that contains
-//  <div class="issue-error"></div> and open it in a browser.
+//  Renders NOTHING except on the two dead-end pages, where the logged-in user
+//  cannot see the issue. It then takes over the error block and draws ONE
+//  card. Every decision is made here, on the server; the browser receives a
+//  small JSON payload and the script that draws it.
+//
+//  Covered pages:
+//   /browse/<KEY>                     Jira core, block .issue-error
+//   /projects/<P>/queues[/...]/<KEY>  Jira Service Management agent view,
+//                                     stock "Snap! You can't view this page"
+//                                     (<section id="unlicensed-project-type">)
+//
+//  Modes built into this file: secured.
+//  Tried in MODE_ORDER; the generic card is the fallback. The full set:
+//   portal     - a Service Management request the viewer CAN open on the portal
+//   share      - a request the viewer cannot open, but whose reporter can add
+//                them with the portal Share button
+//   moved      - it USED to be a request but was moved out of the service desk
+//   secured    - the issue's security level is what hides it: say so, point at
+//                the level's "add one person to this issue" field, and name who
+//                can fill it in (only when every gate in docs/DESIGN.md holds)
+//   restricted - existence only: the issue exists and the viewer may not see
+//                it, nothing else (off unless listed in MODE_ORDER)
+//   missing    - no issue has this key (off unless listed; answers only at
+//                RESTRICTED_SCOPE 'any-issue' with restricted also listed)
+//   generic    - anything else -> Help Center + raise a request; identical for
+//                a hidden issue and for a key that does not exist
+//
+//  Properties that hold for every mode: the payload defaults to the generic
+//  card BEFORE any lookup, so an exception degrades to a usable card; the JSON
+//  payload is HTML-escaped before it enters the inline <script>, and the
+//  client inserts every server value as a text node; the client script
+//  carries NO comments (build/strip_client_comments.py --check enforces it).
 // ============================================================================
-// >>> COPY IMPORTS
 import com.atlassian.jira.application.ApplicationRoleManager
 import com.atlassian.jira.component.ComponentAccessor
 import com.atlassian.jira.issue.security.IssueSecurityLevelManager
@@ -25,8 +52,7 @@ import com.atlassian.application.api.ApplicationKey
 import com.atlassian.jira.application.ApplicationAuthorizationService
 import com.atlassian.jira.web.ExecutingHttpRequest
 import groovy.json.JsonOutput
-// <<< COPY IMPORTS
-// >>> COPY CONFIG
+
 // >>> CONFIG =================================================================
 //  Every deployment-specific value lives in this block. Nothing else in the
 //  assembled file needs editing; docs/CONFIG.md explains each one.
@@ -37,7 +63,7 @@ import groovy.json.JsonOutput
 // Where "Raise a request" and "Ask for access" lead: the create page of the
 // Service Management request type that handles access questions.
 // Format: /servicedesk/customer/portal/<portal id>/create/<request type id>
-final String FALLBACK_URL = '/servicedesk/customer/portal/1/create/1'
+final String FALLBACK_URL = '/secure/ContactAdministrators!default.jspa'
 
 // Per-project escalation targets, by project key. A project not listed here
 // uses FALLBACK_URL. Read only by cards that already confirm the issue
@@ -46,7 +72,7 @@ final String FALLBACK_URL = '/servicedesk/customer/portal/1/create/1'
 final Map    ESCALATION_BY_PROJECT = [:]
 
 // The customer portal's Help Center (stock Jira Service Management path).
-final String HELP_CENTER  = '/servicedesk/customer/portals'
+final String HELP_CENTER  = '/secure/Dashboard.jspa'
 
 // The viewer's own open requests on the customer portal (stock path).
 final String MY_REQUESTS  = '/servicedesk/customer/user/requests?status=open'
@@ -65,7 +91,7 @@ final List   PAGES        = ['browse', 'agent']
 // and the generic card is the fallback that always exists. A name whose
 // module is not in this build is skipped, so the list can stay as it is
 // across profiles. Remove a name to switch that mode off.
-final List   MODE_ORDER   = ['portal', 'share', 'moved', 'secured']
+final List   MODE_ORDER   = ['secured']
 
 // Kill switch for the "moved out of the service desk" card. false = every
 // viewer it would cover gets the generic card instead.
@@ -160,7 +186,7 @@ final Map    TEXT = [
     messageHeadingThem   : 'Message to send them',
     messageHeading       : 'Message to send',
     raiseRequest         : 'Raise a request',
-    openHelpCenter       : 'Open the Help Center',
+    openHelpCenter       : 'Go to the dashboard',
     openKey              : 'Open {key}',
     // role labels on the people chips of the restricted card
     roleReporter         : 'reporter',
@@ -196,12 +222,12 @@ final Map    TEXT = [
     securedLeadOne       : 'The person below can do that in a few seconds.',
     securedLeadNobody    : 'Anyone who can edit the issue can add you, so send the message below to whoever shared the link with you.',
     securedLeadAgent     : 'Once you are added, open it with the link below rather than from a queue: queues also need an agent licence.',
-    securedLeadNoField   : 'There is no field on this issue for letting one more person in. If you need it, ask whoever shared the link with you, or raise a request.',
+    securedLeadNoField   : 'There is no field on this issue for letting one more person in. If you need it, ask whoever shared the link with you, or contact the Jira administrators.',
     securedMessage       : 'I am trying to open {url}, but it is restricted and I cannot see it. Could you add me ({mail}) to its "{field}" field? That opens this one issue to me and nothing else. Thank you.',
     securedMessageFieldUnnamed : 'I am trying to open {url}, but it is restricted and I cannot see it. Could you add me ({mail}) to the field on the issue that lets one more person see it? That opens this one issue to me and nothing else. Thank you.',
     securedOpenAgain     : 'Added already? Open {key}',
-    securedEscalateField : 'Nobody to ask? Raise a request',
-    securedEscalateNoField : 'Something else? Raise a request',
+    securedEscalateField : 'Nobody to ask? Contact the Jira administrators',
+    securedEscalateNoField : 'Something else? Contact the Jira administrators',
     // restricted (existence only; modes/restricted, off unless in MODE_ORDER)
     restrictedTitle      : 'This issue is restricted',
     restrictedText       : '{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request.',
@@ -213,91 +239,402 @@ final Map    TEXT = [
     // generic
     genericTitle         : "You can't view this issue",
     genericTitleAgent    : 'This page is for service desk agents',
-    genericText          : 'It may have been deleted, or you may not have permission. If you were looking for a Service Management request, the Help Center lists every request you raised.',
+    genericText          : 'It may have been deleted, or you may not have permission to view it. If someone sent you this link, ask them for access.',
     genericTextAgent     : 'Queues are the Jira Service Management agent view, and only agents can open them. You almost certainly do not need that: requests you raised are all listed in the Help Center, and if you need access to a particular one, or help with anything else, raise a request and we will sort it out.',
-    genericEscalate      : 'Still stuck? Raise a request and we will help',
+    genericEscalate      : 'Still stuck? Contact the Jira administrators',
 ]
 // <<< CONFIG =================================================================
-// <<< COPY CONFIG
 
-def FALLBACK = '/servicedesk/customer/portal/1/create/1'
-def TWO = [[name: 'Jane Doe', role: 'reporter'], [name: 'John Smith', role: 'assignee']]
+// >>> DECIDE -- build/sync_tests.py copies everything from here down to
+//               "<<< DECIDE" verbatim into tests/decision_test*.groovy, so
+//               the decision tests run the deployed logic, not a copy of it.
 
-def CASES = [
-  [name: 'portal / browse', page: 'browse', payload: [mode: 'portal',
-      portalUrl: '/servicedesk/customer/portal/1/HELP-201',
-      myRequests: '/servicedesk/customer/user/requests?status=open', fallbackUrl: FALLBACK]],
-  [name: 'portal / agent', page: 'agent', payload: [mode: 'portal',
-      portalUrl: '/servicedesk/customer/portal/1/HELP-201',
-      myRequests: '/servicedesk/customer/user/requests?status=open', fallbackUrl: FALLBACK]],
-  [name: 'share / browse', page: 'browse', payload: [mode: 'share', issueKey: 'HELP-202',
-      portalUrl: '/servicedesk/customer/portal/1/HELP-202',
-      reporterName: 'Jane Doe', myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'share / agent', page: 'agent', payload: [mode: 'share', issueKey: 'HELP-202',
-      portalUrl: '/servicedesk/customer/portal/1/HELP-202',
-      reporterName: 'Jane Doe', myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'moved / browse', page: 'browse', payload: [mode: 'moved', issueKey: 'DEMO-150',
-      issueUrl: '/browse/DEMO-150', projectName: 'Demo Project', oldKey: 'HELP-150',
-      fallbackUrl: FALLBACK]],
-  [name: 'moved / agent', page: 'agent', payload: [mode: 'moved', issueKey: 'DEMO-150',
-      issueUrl: '/browse/DEMO-150', projectName: 'Demo Project', oldKey: null,
-      fallbackUrl: FALLBACK]],
-  [name: 'generic / browse', page: 'browse', payload: [mode: 'generic',
-      helpCenter: '/servicedesk/customer/portals', fallbackUrl: FALLBACK]],
-  [name: 'generic / agent', page: 'agent', payload: [mode: 'generic',
-      helpCenter: '/servicedesk/customer/portals', fallbackUrl: FALLBACK]],
-  [name: 'secured two people / browse', page: 'browse', payload: [mode: 'secured',
-      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', levelName: 'Project team only',
-      fieldName: 'Can also see', people: TWO, myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'secured two people / agent', page: 'agent', payload: [mode: 'secured',
-      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', levelName: 'Project team only',
-      fieldName: 'Can also see', people: TWO, myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'secured one person / browse', page: 'browse', payload: [mode: 'secured',
-      issueKey: 'DEMO-103', issueUrl: '/browse/DEMO-103', levelName: 'Project team only',
-      fieldName: 'Can also see', people: [[name: 'Jane Doe', role: 'reporter and assignee']],
-      myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'secured one person, Latin Extended name / browse', page: 'browse', payload: [mode: 'secured',
-      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', levelName: 'Project team only',
-      fieldName: 'Can also see', people: [[name: '\u0141ucja Nowak', role: 'assignee']],
-      myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'secured nobody / browse', page: 'browse', payload: [mode: 'secured',
-      issueKey: 'DEMO-102', issueUrl: '/browse/DEMO-102', levelName: 'Project team only',
-      fieldName: 'Can also see', people: [], myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'secured nobody / agent', page: 'agent', payload: [mode: 'secured',
-      issueKey: 'DEMO-102', issueUrl: '/browse/DEMO-102', levelName: 'Project team only',
-      fieldName: 'Can also see', people: [], myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'secured field unnamed (DISCLOSURE fieldName false), one person / browse', page: 'browse', payload: [mode: 'secured',
-      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', levelName: '',
-      fieldName: null, hasField: true, people: [[name: 'Jane Doe', role: 'reporter']],
-      myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'secured minimal disclosure (no level, no field name, nobody) / browse', page: 'browse', payload: [mode: 'secured',
-      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', levelName: '',
-      fieldName: null, hasField: true, people: [], myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'secured no field / browse', page: 'browse', payload: [mode: 'secured',
-      issueKey: 'OPS-318', issueUrl: '/browse/OPS-318', levelName: 'Management only',
-      fieldName: null, people: [], myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'secured no field, unnamed level / agent', page: 'agent', payload: [mode: 'secured',
-      issueKey: 'OPS-318', issueUrl: '/browse/OPS-318', levelName: '',
-      fieldName: null, people: [], myMail: 'you@example.com', fallbackUrl: FALLBACK]],
-  [name: 'restricted (existence only) / browse', page: 'browse', payload: [mode: 'restricted',
-      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', fallbackUrl: FALLBACK]],
-  [name: 'restricted (existence only) / agent', page: 'agent', payload: [mode: 'restricted',
-      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', fallbackUrl: FALLBACK]],
-  [name: 'missing (no such key) / browse', page: 'browse', payload: [mode: 'missing',
-      issueKey: 'NOPE-99999', helpCenter: '/servicedesk/customer/portals', fallbackUrl: FALLBACK]],
-  [name: 'secured hostile values / browse', page: 'browse', payload: [mode: 'secured',
-      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101',
-      levelName: '</script><img src=x onerror="window.__pwned=1">', fieldName: 'F<b>x</b>&amp;',
-      people: [[name: '<img src=x onerror="window.__pwned=2"> Eve', role: 'reporter']],
-      myMail: 'a"b</script>@x.y', fallbackUrl: FALLBACK]],
-]
+// core/context.groovy -- shared helpers and the mode registry.
+// Always built in, first in the DECIDE section. Everything here is read-only.
 
-def out = new StringBuilder()
-CASES.each { c ->
-    def payload = c.payload
-    String pageKind = c.page
-    def writer = new StringWriter()
-// >>> COPY RENDER
+// The registry. Each mode module adds one entry:
+//   MODES['name'] = { ctx -> a payload map, or null for "not my case" }
+// core/decide.groovy tries them in MODE_ORDER and takes the first answer.
+def MODES = [:]
+
+// A mail address for the copy-ready messages. An account without one falls
+// back to its username rather than rendering "add me (null)"; where usernames
+// are e-mail addresses, that is still a usable address.
+def mailOf = { u ->
+    def m = u.getEmailAddress() ?: ''
+    return m.contains('@') ? m : u.getName()
+}
+
+// Application access: true for an ACTIVE account that holds any licensed
+// application role (Jira Software, Jira Core, a Service Management agent
+// seat), false for portal-only customers, deactivated accounts and anonymous.
+// This is the "is not a portal-only customer" gate of the share, moved and
+// secured cards. 1.0.0 asked GlobalPermissionKey.USE for the same thing; that
+// key is marked @Deprecated ("Use ApplicationAuthorizationService instead.
+// Since v7.0") in every Javadoc from 8.0 to 11.x. 1.1.0 uses
+// ApplicationRoleManager.hasAnyRole instead, present unchanged over the same
+// range. hasAnyRole does not look at the account's status: a deactivated
+// account that is still in a licensed group answers true, where USE answered
+// false (measured on every account of one instance: about one deactivated
+// account in six). With isActive() in front, the two agreed for every account.
+def hasAppAccess = { u ->
+    u != null && u.isActive() && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
+}
+
+// Test hook. Deployed, this stays null and costs nothing. The decision tests
+// set it to a list before calling decide(), and decide() then records every
+// exception a mode swallowed, so a mode that always throws cannot pass a
+// negative test by accident.
+def MODE_ERRORS = null
+
+// Does this viewer pass the issue's security level? True when the issue has
+// none. getUsersSecurityLevels is documented as "can be null", hence ?: [].
+def passesSecurity = { issue, u ->
+    Long levelId = issue?.getSecurityLevelId()
+    if (levelId == null) { return true }
+    def levels = ComponentAccessor.getComponent(IssueSecurityLevelManager).getUsersSecurityLevels(issue, u) ?: []
+    return levels.any { it.getId() == levelId }
+}
+
+// Service Management project? Gate on the project TYPE, not merely on the
+// request-type field: issues moved out of a service desk keep the field, and
+// the portal lookup throws for them.
+def isServiceDeskProject = { proj ->
+    proj != null && proj.getProjectTypeKey()?.getKey() == 'service_desk'
+}
+
+// Does the issue carry a Customer Request Type value (RT_FIELD)?
+def hasRequestType = { issue ->
+    def rtField = ComponentAccessor.getCustomFieldManager().getCustomFieldObject(RT_FIELD)
+    return issue != null && rtField != null && issue.getCustomFieldValue(rtField) != null
+}
+
+// Where "Raise a request" leads for this project. Only for cards that already
+// confirm the issue exists; the generic card must keep using FALLBACK_URL.
+def escalationFor = { proj ->
+    (proj != null ? ESCALATION_BY_PROJECT[proj.getKey()] : null) ?: FALLBACK_URL
+}
+
+// policy/internal-mail-domain.groovy -- who counts as internal: e-mail domain,
+// and by default the username as well (CONFIG: INTERNAL_MAIL_DOMAINS,
+// INTERNAL_REQUIRE_USERNAME). See docs/DESIGN.md, "Who counts as internal".
+// Alternative: policy/internal-group.groovy. Build exactly one of them.
+
+// An address qualifies when it holds exactly one "@" and its whole domain
+// matches one of the patterns.
+def internalAddr = { String a ->
+    def m = (a ?: '').toLowerCase()
+    int at = m.lastIndexOf('@')
+    return at > 0 && m.indexOf('@') == at &&
+           INTERNAL_MAIL_DOMAINS.any { p -> m.substring(at + 1) ==~ p }
+}
+
+def isInternal = { u ->
+    u != null &&
+    (!INTERNAL_REQUIRE_USERNAME || internalAddr(u.getName())) && internalAddr(u.getEmailAddress())
+}
+
+// policy/people-reporter-assignee.groovy -- who the restricted card may name
+// as able to add the viewer: the reporter first, then the assignee, each only
+// while that person is active, is not the viewer, has a mail address, is not
+// an automation account (BOT_NAMES), and can see AND edit this issue.
+// To name someone else (a project lead, a component lead), write another
+// module that provides peopleFor with the same shape:
+//   [[name: 'Display Name', role: 'reporter'], ...]   at most two entries.
+
+def peopleFor = { ctx ->
+    def issue = ctx.issue
+    def user  = ctx.user
+    def pm    = ctx.pm
+    def im    = ComponentAccessor.getIssueManager()
+    def byName = new LinkedHashMap()
+    [[issue.getReporter(), TEXT.roleReporter], [issue.getAssignee(), TEXT.roleAssignee]].each { pr ->
+        def u = pr[0]
+        if (u == null || u.getName() == user.getName() || !u.isActive()) { return }
+        if (!(u.getEmailAddress() ?: '').contains('@')) { return }
+        if (BOT_NAMES.contains((u.getDisplayName() ?: '').toLowerCase())) { return }
+        if (!byName.containsKey(u.getName())) {
+            if (!pm.hasPermission(ProjectPermissions.BROWSE_PROJECTS, issue, u) ||
+                !pm.hasPermission(ProjectPermissions.EDIT_ISSUES, issue, u) ||
+                !im.isEditable(issue, u)) { return }
+            byName.put(u.getName(), [name: u.getDisplayName(), roles: []])
+        }
+        byName.get(u.getName()).roles.add(pr[1])
+    }
+    return byName.values().collect { [name: it.name, role: it.roles.join(' ' + TEXT.roleAnd + ' ')] }
+}
+
+// modes/secured.groovy -- the issue is hidden by its SECURITY LEVEL, and the
+// level is the only thing stopping this viewer. Says so, points at the
+// level's own "add one person to this one issue" field, and names who can
+// fill it in. Every gate below must hold; the first failure returns null and
+// the caller keeps its generic card (docs/DESIGN.md, "The restricted card's
+// gates, in order"). DISCLOSURE and DISCLOSURE_BY_LEVEL trim what the card
+// says once the gates have passed; they never widen the audience.
+
+MODES['secured'] = { ctx ->
+    if (!SECURED_CARD) { return null }
+    def issue = ctx.issue
+    def user  = ctx.user
+    if (issue == null) { return null }
+    Long levelId = issue.getSecurityLevelId()
+    if (levelId == null) { return null }
+
+    // Cheapest gates first. Portal-only customers must never be told an issue
+    // exists, and neither must anyone the internal-viewer policy rejects.
+    if (!isInternal(user)) { return null }
+    if (!hasAppAccess(user)) { return null }
+    def islm  = ComponentAccessor.getComponent(IssueSecurityLevelManager)
+    def level = islm.getSecurityLevel(levelId)
+    // Ids are compared as Long whatever the CONFIG list holds (12345 or
+    // 12345L), so a missing L suffix can neither switch the card off nor
+    // skip an exclusion.
+    def schemesInScope = SECURED_SCHEMES.collect { it as Long }
+    def levelsToSkip   = SECURED_SKIP_LEVELS.collect { it as Long }
+    if (level == null || !schemesInScope.contains(level.getSchemeId() as Long) ||
+        levelsToSkip.contains(levelId as Long)) { return null }
+    // Already on the level: then the level is not what blocks them.
+    if (passesSecurity(issue, user)) { return null }
+
+    def proj = ctx.proj
+    def im   = ComponentAccessor.getIssueManager()
+    // Archived, or a workflow step with jira.issue.editable=false: nobody can
+    // fill any field in, so there is no honest advice to give.
+    if (proj == null || proj.isArchived() || !im.isEditable(issue)) { return null }
+
+    // The level's own escape hatch: a MULTI-user picker the level grants on
+    // (a "can also see" style field). Single pickers in the same grants are
+    // typically role fields (a reviewer, a manager), and asking to be put
+    // there would displace a person, so they never qualify.
+    def cfm = ComponentAccessor.getCustomFieldManager()
+    def candidates = ComponentAccessor.getComponent(IssueSecuritySchemeManager)
+        .getPermissionsBySecurityLevel(levelId)
+        .findAll { it.getType() == 'userCF' }
+        .collect { cfm.getCustomFieldObject(it.getParameter() as String) }
+        .findAll { cf -> cf != null &&
+                   (cf.getCustomFieldType()?.getKey() ?: '').endsWith(':multiuserpicker') &&
+                   cf.getRelevantConfig(issue) != null }
+
+    // ...and it must really be on this issue's EDIT screen. The renderer's
+    // per-field lookup answers with an item even for fields that are NOT on
+    // the screen, so walk the tabs instead. Built only when there is a
+    // candidate at all. Several qualifying fields: SECURED_FIELD_PREFERENCE
+    // decides, else the lowest field id.
+    def field = null
+    if (!candidates.isEmpty()) {
+        def onEdit = [] as Set
+        try {
+            def r = ComponentAccessor.getFieldScreenRendererFactory()
+                        .getFieldScreenRenderer(issue, IssueOperations.EDIT_ISSUE_OPERATION)
+            r.getFieldScreenRenderTabs().each { t ->
+                t.getFieldScreenRenderLayoutItems().each { li ->
+                    if (li.isShow(issue)) { onEdit.add(li.getOrderableField()?.getId()) }
+                }
+            }
+        } catch (Throwable ignoredScreen) {
+            onEdit.clear()      // unknown screen -> offer no field rather than a wrong one
+        }
+        def usable = candidates.findAll { onEdit.contains(it.getId()) }
+        def preferred = SECURED_FIELD_PREFERENCE.collect { p ->
+            String s = p.toString()
+            s.startsWith('customfield_') ? s : 'customfield_' + s
+        }
+        field = preferred.findResult { p -> usable.find { it.getId() == p } } ?:
+                usable.sort { it.getIdAsLong() }.find { true }
+    }
+
+    // Would the viewer actually get in? Issue security is a second lock on top
+    // of the permission scheme. Project-level Browse is NOT the test: it is
+    // true for everyone on projects that grant Browse through the reporter or
+    // a user field. hasSchemePermission consults the permission scheme only
+    // (issue security is a separate check that PermissionManager adds on
+    // top), so it answers "would the scheme let this viewer browse THIS
+    // issue"; its last argument, issueCreation, is false because the issue
+    // exists. Failing that, accept a scheme that grants Browse through the
+    // very field we suggest. hasSchemePermission is marked @Internal by
+    // Atlassian (unchanged from Jira 8.0 to 11.x); if it ever disappears, the
+    // call throws, the mode returns nothing, and the viewer keeps the generic
+    // card -- the safe direction.
+    def psm = ComponentAccessor.getPermissionSchemeManager()
+    boolean schemeLetsIn = psm.hasSchemePermission(ctx.BROWSE, issue, user, false)
+    if (!schemeLetsIn && field != null) {
+        def scheme = psm.getSchemeFor(proj)
+        schemeLetsIn = scheme != null && psm.getPermissionSchemeEntries(scheme, ctx.BROWSE)
+                          .any { it.getType() == 'userCF' && it.getParameter() == field.getId() }
+    }
+    if (!schemeLetsIn) { return null }
+
+    // What the card may say (DISCLOSURE, with per-level overrides). People are
+    // named only when there is a field to fill in.
+    def perLevel = DISCLOSURE_BY_LEVEL.find { k, v -> (k as Long) == (levelId as Long) }?.value ?: [:]
+    def disc = DISCLOSURE + perLevel
+    def people = (field != null && disc.people) ? peopleFor(ctx) : []
+
+    return [mode: 'secured', issueKey: issue.getKey(), issueUrl: '/browse/' + issue.getKey(),
+            levelName: disc.levelName ? (level.getName() ?: '').trim() : '',
+            fieldName: (field != null && disc.fieldName) ? field.getName() : null,
+            hasField: field != null,
+            people: people,
+            myMail: mailOf(user), fallbackUrl: escalationFor(proj)]
+}
+
+// core/decide.groovy -- decides which card (if any) this user gets for this
+// issue on this page. Always built in, last in the DECIDE section.
+
+// null = the page renders fine for them -> stay out of the way.
+// key is the canonical key of the resolved issue (or the URL's key when no
+// issue resolves); urlKey is the key as the viewer typed it, which differs
+// after a move. Modes that must not reveal a move use ctx.urlKey.
+def decide = { user, issue, String key, String pageKind, String urlKey = null ->
+    def pm     = ComponentAccessor.getPermissionManager()
+    def BROWSE = ProjectPermissions.BROWSE_PROJECTS
+
+    //  /browse/   is gated on Browse Projects.
+    //  agent view is gated on the Service Management AGENT LICENCE first: a
+    //  viewer without one is bounced to the "Snap!" page even where Browse
+    //  would have let them in, so Browse alone is the wrong test there.
+    boolean pageWorks
+    if (pageKind == 'browse') {
+        pageWorks = issue != null && pm.hasPermission(BROWSE, issue, user)
+    } else {
+        boolean isAgent = false
+        try {
+            isAgent = ComponentAccessor.getComponent(ApplicationAuthorizationService)
+                          .canUseApplication(user, ApplicationKey.valueOf('jira-servicedesk'))
+        } catch (Throwable ignoredLicence) {
+            isAgent = false     // unknown -> compute the card; the DOM gate
+        }                       // still keeps it off a page that renders
+        pageWorks = isAgent && (issue == null || pm.hasPermission(BROWSE, issue, user))
+    }
+    if (pageWorks) { return null }
+
+    // Safe default from here on: any failure below degrades to this card
+    // rather than blanking the helper, and a viewer who fails every gate sees
+    // the same card whether the issue exists or not. FALLBACK_URL on purpose,
+    // never a per-project link: the generic card must not depend on the
+    // project.
+    def payload = [mode: 'generic', helpCenter: HELP_CENTER, fallbackUrl: FALLBACK_URL]
+
+    def proj = null
+    try {
+        proj = issue?.getProjectObject()
+    } catch (Throwable ignoredProj) {
+        proj = null             // keep the generic card
+    }
+    def ctx = [user: user, issue: issue, key: key, urlKey: urlKey ?: key, pageKind: pageKind,
+               proj: proj, pm: pm, BROWSE: BROWSE]
+
+    // First mode in MODE_ORDER that answers wins. A mode that is not in this
+    // build is skipped; a mode that throws is treated as "no answer".
+    for (String name : MODE_ORDER) {
+        def answer = null
+        try {
+            def mode = MODES[name] as Closure
+            if (mode == null) { continue }
+            answer = mode(ctx)
+        } catch (Throwable modeFailed) {
+            answer = null
+            if (MODE_ERRORS != null) { MODE_ERRORS.add(name + ': ' + modeFailed) }
+        }
+        if (answer instanceof Map && answer.mode) {
+            payload = answer
+            break
+        }
+    }
+    return payload
+}
+
+// <<< DECIDE
+
+// core/entry.groovy -- the fragment's entry point: which page is this, who is
+// looking, which issue. Always built in, between DECIDE and RENDER.
+
+// >>> ROUTE -- build/sync_tests.py copies this block into tests/route_test.groovy
+// Which page is this, and which key does it name. Pure functions of the
+// request URI and the context path, so they can be tested without a request.
+//   route(uri, cp) -> [pageKind: 'browse' | 'agent' | null, key: 'ABC-1' | null]
+// Case-insensitive; the key is then re-read from the resolved issue, because
+// Jira serves lowercase keys and a moved issue still answers on its old key.
+// A Jira served under a context path (for example /jira) reports URIs that
+// start with it: it is stripped before matching, and prefixLinks() puts it
+// back on every root-relative link the card carries. A URI outside the
+// context path is not addressed to this Jira and names no page.
+def route = { String rawUri, String cp ->
+    String uri = rawUri ?: ''
+    String ctxPath = cp ?: ''
+    if (ctxPath) {
+        if (uri == ctxPath || uri.startsWith(ctxPath + '/')) {
+            uri = uri.substring(ctxPath.length())
+        } else {
+            return [pageKind: null, key: null]
+        }
+    }
+    // Each matcher is asked once with find() and read with group(1), so the
+    // result does not depend on how Groovy coerces a Matcher to boolean.
+    // (1.0.0 coerced the same matcher twice; measured correct on Groovy 4.0.8,
+    // so that was a readability and testability change, not a fix.)
+    String kind = null
+    String key  = null
+    def mBrowse = (uri =~ '(?i)^/browse/([a-z][a-z0-9_]*-[0-9]+)')
+    if (mBrowse.find()) {
+        kind = 'browse'
+        key  = mBrowse.group(1).toUpperCase()
+    } else {
+        def mAgent = (uri =~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?/([a-z][a-z0-9_]*-[0-9]+)$')
+        if (mAgent.find()) {
+            kind = 'agent'
+            key  = mAgent.group(1).toUpperCase()
+        } else if (uri ==~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?$') {
+            kind = 'agent'
+        }
+    }
+    if (kind && !PAGES.contains(kind)) { kind = null; key = null }
+    return [pageKind: kind, key: key]
+}
+
+// Puts the context path in front of every root-relative link of a payload.
+// Protocol-relative links (//host/...) and links that already carry the
+// prefix, or equal it, are left alone. CharSequence, not String, so a
+// GString written in CONFIG is treated like any other text.
+def prefixLinks = { Map p, String cp ->
+    if (p == null || !cp) { return p }
+    ['issueUrl', 'portalUrl', 'helpCenter', 'fallbackUrl', 'myRequests'].each { k ->
+        def v = p[k]
+        if (v instanceof CharSequence) {
+            String s = v.toString()
+            if (s.startsWith('/') && !s.startsWith('//') && s != cp && !s.startsWith(cp + '/')) {
+                p[k] = cp + s
+            }
+        }
+    }
+    return p
+}
+// <<< ROUTE
+
+def payload  = null
+String pageKind = null
+
+try {
+    // `req` stays untyped on purpose: Jira 11 returns a jakarta.servlet
+    // request here, earlier versions a javax.servlet one.
+    def req = ExecutingHttpRequest.get()
+    String cp = req?.getContextPath() ?: ''
+    def r = route(req?.getRequestURI() ?: '', cp)
+    pageKind = r.pageKind
+    if (pageKind) {
+        String urlKey = r.key
+        def key  = urlKey
+        def user = ComponentAccessor.getJiraAuthenticationContext().getLoggedInUser()
+        if (user) {
+            def issue = key ? ComponentAccessor.getIssueManager().getIssueObject(key) : null
+            if (issue != null) { key = issue.getKey() }   // canonical key, not the URL's
+            payload = prefixLinks(decide(user, issue, key, pageKind, urlKey), cp)
+        }
+    }
+} catch (Throwable ignored) {
+    payload = null          // never break a page over a helper
+}
+
 // >>> RENDER -- build/sync_tests.py copies this block verbatim into
 //               tests/render_test.groovy. The client script inside must
 //               stay free of comments.
@@ -765,9 +1102,3 @@ if (payload) {
 /$)
 }
 // <<< RENDER
-// <<< COPY RENDER
-    out.append('=====CASE ' + c.name + '=====\n')
-    out.append(writer.toString())
-    out.append('\n')
-}
-return out.toString()

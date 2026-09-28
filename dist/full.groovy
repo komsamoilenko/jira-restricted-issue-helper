@@ -1,22 +1,47 @@
 // ============================================================================
-//  Decision test for dist/full.groovy        READ-ONLY
+//  Restricted-issue helper for Jira's "You can't view this issue" page
+//  Version 1.1.0 -- ScriptRunner for Jira Data Center fragment
+//  Fragment type: "Show a web panel"   Location: atl.header.after.scripts
+//  Weight: 100   Condition: none        Licence: MIT (see LICENSE)
 // ----------------------------------------------------------------------------
-//  Runs decide(), exactly as deployed, for (viewer, issue, page) triples on
-//  YOUR instance and checks which card each one gets. decide() only reads,
-//  so the test changes nothing.
+//  ASSEMBLED FILE. Built by build/assemble.py from profile "full" with
+//  these modules: internal-mail-domain, people-reporter-assignee, jsm, portal, share, moved, secured, restricted, missing.
+//  Do not edit it by hand: edit src/ and rebuild (docs/EXTENDING.md). Only the
+//  CONFIG block below is meant to be edited in a deployed copy.
 //
-//  How to use:
-//   1. python build/sync_tests.py --source <your configured fragment>
-//      refreshes the COPY regions below, CONFIG values included.
-//   2. Replace the synthetic users and issue keys in CASES with accounts and
-//      issues on your instance that match each scenario, and the expected
-//      level and field names with yours. Keep a scenario's intent; drop the
-//      ones your instance cannot express (no Service Management, say).
-//   3. Paste the whole file into ScriptRunner > Console and run it.
-//  A case whose user does not exist is reported as SKIP, not as a failure.
-//  A FAIL means either the logic or your data moved: read the "got" line.
+//  Renders NOTHING except on the two dead-end pages, where the logged-in user
+//  cannot see the issue. It then takes over the error block and draws ONE
+//  card. Every decision is made here, on the server; the browser receives a
+//  small JSON payload and the script that draws it.
+//
+//  Covered pages:
+//   /browse/<KEY>                     Jira core, block .issue-error
+//   /projects/<P>/queues[/...]/<KEY>  Jira Service Management agent view,
+//                                     stock "Snap! You can't view this page"
+//                                     (<section id="unlicensed-project-type">)
+//
+//  Modes built into this file: portal, share, moved, secured, restricted, missing.
+//  Tried in MODE_ORDER; the generic card is the fallback. The full set:
+//   portal     - a Service Management request the viewer CAN open on the portal
+//   share      - a request the viewer cannot open, but whose reporter can add
+//                them with the portal Share button
+//   moved      - it USED to be a request but was moved out of the service desk
+//   secured    - the issue's security level is what hides it: say so, point at
+//                the level's "add one person to this issue" field, and name who
+//                can fill it in (only when every gate in docs/DESIGN.md holds)
+//   restricted - existence only: the issue exists and the viewer may not see
+//                it, nothing else (off unless listed in MODE_ORDER)
+//   missing    - no issue has this key (off unless listed; answers only at
+//                RESTRICTED_SCOPE 'any-issue' with restricted also listed)
+//   generic    - anything else -> Help Center + raise a request; identical for
+//                a hidden issue and for a key that does not exist
+//
+//  Properties that hold for every mode: the payload defaults to the generic
+//  card BEFORE any lookup, so an exception degrades to a usable card; the JSON
+//  payload is HTML-escaped before it enters the inline <script>, and the
+//  client inserts every server value as a text node; the client script
+//  carries NO comments (build/strip_client_comments.py --check enforces it).
 // ============================================================================
-// >>> COPY IMPORTS
 import com.atlassian.jira.application.ApplicationRoleManager
 import com.atlassian.jira.component.ComponentAccessor
 import com.atlassian.jira.issue.security.IssueSecurityLevelManager
@@ -27,8 +52,7 @@ import com.atlassian.application.api.ApplicationKey
 import com.atlassian.jira.application.ApplicationAuthorizationService
 import com.atlassian.jira.web.ExecutingHttpRequest
 import groovy.json.JsonOutput
-// <<< COPY IMPORTS
-// >>> COPY CONFIG
+
 // >>> CONFIG =================================================================
 //  Every deployment-specific value lives in this block. Nothing else in the
 //  assembled file needs editing; docs/CONFIG.md explains each one.
@@ -220,8 +244,7 @@ final Map    TEXT = [
     genericEscalate      : 'Still stuck? Raise a request and we will help',
 ]
 // <<< CONFIG =================================================================
-// <<< COPY CONFIG
-// >>> COPY DECIDE
+
 // >>> DECIDE -- build/sync_tests.py copies everything from here down to
 //               "<<< DECIDE" verbatim into tests/decision_test*.groovy, so
 //               the decision tests run the deployed logic, not a copy of it.
@@ -724,333 +747,560 @@ def decide = { user, issue, String key, String pageKind, String urlKey = null ->
 }
 
 // <<< DECIDE
-// <<< COPY DECIDE
 
-// Synthetic data. Scenario names say what the account and the issue must be.
-//  alice@example.com     internal viewer (passes the internal-viewer policy,
-//                        holds application access), no agent licence, not on DEMO levels
-//  bob@example.com       reporter of DEMO-101, can see and edit it
-//  carol@example.com     assignee of DEMO-101, can see and edit it
-//  agent@example.com     Service Management agent who can browse HELP
-//  customer@example.org  portal-only customer (no application access)
-//  contractor@example.org  external account that holds application access
-//  svc-robot             service account that holds application access, outside the policy
-//  mailonly              username outside the policy, e-mail inside it
-//  dave@example.com      internal viewer already added to DEMO-101's field
-//  norole@example.com    internal by the policy, but WITHOUT application
-//                        access (in no licensed group); the permission scheme
-//                        would let her browse DEMO-101 with issue security
-//                        left out (so only the access gate stops the card)
-//  former@example.com    DEACTIVATED internal account still in a licensed
-//                        group (getUserByName returns inactive users too);
-//                        same permission-scheme situation as norole
-//  erin@example.com      internal viewer who IS on the level "Project team
-//                        only" of the HELP project, but is not a participant
-//                        of HELP-204 and HELP-205
-//  frank@example.com     internal, holds an application role, IS on the
-//                        level of DEMO-101, but the permission scheme gives
-//                        him no Browse on DEMO (in none of the roles or
-//                        groups that hold it), so he cannot open the issue
-//
-//  DEMO-101  level "Project team only" (scheme in SECURED_SCHEMES), grants
-//            on the multi-user field "Can also see", which is on the edit
-//            screen; reporter bob, assignee carol, both active
-//  DEMO-102  same level and field; reporter inactive, no assignee
-//  DEMO-103  a level in scope with no multi-user grant field on the screen
-//  DEMO-104  a level listed in SECURED_SKIP_LEVELS
-//  DEMO-105  a level in a scheme that is NOT in SECURED_SCHEMES
-//  DEMO-150  moved out of a service desk (it had a HELP key before)
-//  RETIRED-1   restricted issue in an archived project
-//  CLOSED-7  restricted issue in a project whose permission scheme does not
-//            let alice browse it even with issue security left out
-//  HELP-201  request alice can open on the portal (she is a participant)
-//  HELP-202  request alice is not on; its reporter can share it
-//  HELP-203  request on the level "Project team only"
-//  HELP-204  request on that level, erin not a participant, reporter bob
-//            (active, has a mail address) can share it
-//  HELP-205  request on that level, erin not a participant, reporter inactive
-//  NOPE-99999  does not exist (the only key that may be missing: every other
-//              case is SKIPPED, not passed, when its key does not resolve)
-//
-//  Case fields: user, key, page, then ONE of
-//   expect: [mode: ..., other keys]   every listed key must match; mode is required
-//   expect: null                      no card at all
-//  (a case without expect FAILS: a typo must not pass) and optional
-//  preconditions, checked before decide() and reported as SKIP when the data
-//  does not match the scenario:
-//   needsLevel        the issue carries a security level
-//   needsArchived     its project is archived
-//   missing           the key must NOT resolve
-//   needsInactive     the account is deactivated
-//   needsInternal     the account passes the internal-viewer policy
-//   needsAppRole      the account holds an application role (hasAnyRole)
-//   needsNoAppRole    the account holds none
-//   needsSchemeBrowse the permission scheme, issue security left out, would
-//                     let the account browse the issue (hasSchemePermission)
-//   needsOnLevel      the account passes the issue's security level
-//   needsOffLevel     the account does not
-//  The last six exist so that a "-> generic" or "-> no answer" case proves
-//  that ONE gate stopped the card, not whichever came first.
-//   optional: true    a case whose preconditions no account on the instance
-//                     can meet is reported as N/A and does not spoil the
-//                     verdict (X08 needs an internal account without any
-//                     application role that the permission scheme would still
-//                     let browse a restricted issue; some instances have none)
-//   direct: '<mode>'  call that mode on its own instead of decide(); the
-//                     harness first checks that the viewer cannot open the
-//                     issue, because decide() would never reach a mode otherwise
-def TWO_PEOPLE = [[name: 'Bob Example', role: 'reporter'], [name: 'Carol Example', role: 'assignee']]
-// The 'missing' card answers only at RESTRICTED_SCOPE 'any-issue' with
-// 'restricted' also in MODE_ORDER (see modes/missing). These two booleans
-// let the same cases hold for the full profile (both false) and for
-// exists-only (both true).
-boolean MISSING_ANSWERS = MODE_ORDER.contains('restricted') && RESTRICTED_SCOPE == 'any-issue'
-boolean MISSING_ON      = MISSING_ANSWERS && MODE_ORDER.contains('missing')
+// core/entry.groovy -- the fragment's entry point: which page is this, who is
+// looking, which issue. Always built in, between DECIDE and RENDER.
 
-def CASES = [
-  [name: 'T01 internal viewer x restricted issue, field on screen, two helpers -> secured',
-   user: 'alice@example.com', key: 'DEMO-101', page: 'browse', needsLevel: true,
-   expect: [mode: 'secured', issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101',
-            levelName: 'Project team only', fieldName: 'Can also see', hasField: true,
-            people: TWO_PEOPLE, myMail: 'alice@example.com', fallbackUrl: FALLBACK_URL]],
-  [name: 'T02 same viewer and issue on the agent page -> secured',
-   user: 'alice@example.com', key: 'DEMO-101', page: 'agent', needsLevel: true,
-   expect: [mode: 'secured', fieldName: 'Can also see']],
-  [name: 'T03 the reporter (can see the issue) -> no card',
-   user: 'bob@example.com', key: 'DEMO-101', page: 'browse', expect: null],
-  [name: 'T04 a viewer already added to the field -> no card',
-   user: 'dave@example.com', key: 'DEMO-101', page: 'browse', expect: null],
-  [name: 'T05 reporter inactive, no assignee -> secured, field, nobody named',
-   user: 'alice@example.com', key: 'DEMO-102', page: 'browse', needsLevel: true,
-   expect: [mode: 'secured', fieldName: 'Can also see', hasField: true, people: []]],
-  [name: 'T06 level with no multi-user grant field on the edit screen -> secured, no field',
-   user: 'alice@example.com', key: 'DEMO-103', page: 'browse', needsLevel: true,
-   expect: [mode: 'secured', fieldName: null, hasField: false, people: []]],
-  [name: 'T07 Service Management request on a restricted level -> secured, not generic',
-   user: 'alice@example.com', key: 'HELP-203', page: 'browse', needsLevel: true,
-   expect: [mode: 'secured', levelName: 'Project team only']],
-  [name: 'T08 portal-only customer (no application access) x restricted request -> generic, never secured',
-   user: 'customer@example.org', key: 'HELP-203', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  [name: 'T09 portal-only customer x restricted issue in another project -> generic',
-   user: 'customer@example.org', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  [name: 'T10 request the viewer can open on the portal, agent page -> portal',
-   user: 'alice@example.com', key: 'HELP-201', page: 'agent',
-   expect: [mode: 'portal', portalUrl: '/servicedesk/customer/portal/1/HELP-201',
-            myRequests: MY_REQUESTS, fallbackUrl: FALLBACK_URL]],
-  [name: 'T11 same request on /browse/ -> portal',
-   user: 'alice@example.com', key: 'HELP-201', page: 'browse',
-   expect: [mode: 'portal', portalUrl: '/servicedesk/customer/portal/1/HELP-201']],
-  [name: 'T12 request the viewer is not on, reporter can share -> share',
-   user: 'alice@example.com', key: 'HELP-202', page: 'browse',
-   expect: [mode: 'share', issueKey: 'HELP-202', portalUrl: '/servicedesk/customer/portal/1/HELP-202',
-            reporterName: 'Bob Example', myMail: 'alice@example.com', fallbackUrl: FALLBACK_URL]],
-  [name: 'T13 issue moved out of a service desk -> moved',
-   user: 'alice@example.com', key: 'DEMO-150', page: 'browse',
-   expect: [mode: 'moved', issueKey: 'DEMO-150', issueUrl: '/browse/DEMO-150',
-            projectName: 'Demo Project', oldKey: 'HELP-150', fallbackUrl: FALLBACK_URL]],
-  [name: 'T14 no such issue -> generic (missing, when the missing card is on)',
-   user: 'alice@example.com', key: 'NOPE-99999', page: 'browse', missing: true,
-   expect: MISSING_ON ? [mode: 'missing', issueKey: 'NOPE-99999']
-                      : [mode: 'generic', helpCenter: HELP_CENTER, fallbackUrl: FALLBACK_URL]],
-  [name: 'T15 agent who can browse, agent page -> no card',
-   user: 'agent@example.com', key: 'HELP-201', page: 'agent', expect: null],
-  [name: 'T16 viewer on the level of a restricted request, not a participant, reporter usable -> share, not secured',
-   user: 'erin@example.com', key: 'HELP-204', page: 'browse', needsLevel: true, needsOnLevel: true,
-   expect: [mode: 'share', issueKey: 'HELP-204', reporterName: 'Bob Example']],
-  [name: 'T17 same, reporter unusable -> generic',
-   user: 'erin@example.com', key: 'HELP-205', page: 'browse', needsLevel: true, needsOnLevel: true,
-   expect: [mode: 'generic']],
-  // ---- the gates of the restricted card: each of these must stay generic ----
-  [name: 'X01 external account holding application access x restricted issue -> generic',
-   user: 'contractor@example.org', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  [name: 'X02 service account holding application access x restricted issue -> generic',
-   user: 'svc-robot', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  [name: 'X03 e-mail inside the policy, username outside it -> generic',
-   user: 'mailonly', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  [name: 'X04 level listed in SECURED_SKIP_LEVELS -> generic',
-   user: 'alice@example.com', key: 'DEMO-104', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  [name: 'X05 level in a scheme outside SECURED_SCHEMES -> generic',
-   user: 'alice@example.com', key: 'DEMO-105', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  [name: 'X06 restricted issue in an archived project -> generic',
-   user: 'alice@example.com', key: 'RETIRED-1', page: 'browse', needsLevel: true, needsArchived: true,
-   expect: [mode: 'generic']],
-  [name: 'X07 viewer the permission scheme would not let in anyway -> generic',
-   user: 'alice@example.com', key: 'CLOSED-7', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  // ---- the application-access gate on its own. The preconditions prove that
-  //      no other gate stops the card, so a generic answer comes from
-  //      hasAppAccess alone. Each must stay generic. ----
-  [name: 'X08 internal viewer WITHOUT application access x restricted issue -> generic',
-   user: 'norole@example.com', key: 'DEMO-101', page: 'browse', optional: true,
-   needsLevel: true, needsInternal: true, needsNoAppRole: true, needsSchemeBrowse: true,
-   expect: [mode: 'generic']],
-  [name: 'X09 deactivated internal account with a role x restricted issue -> generic',
-   user: 'former@example.com', key: 'DEMO-101', page: 'browse',
-   needsLevel: true, needsInactive: true, needsInternal: true, needsAppRole: true, needsSchemeBrowse: true,
-   expect: [mode: 'generic']],
-  [name: 'X10 deactivated internal account with a role x request with a usable reporter -> generic, never share',
-   user: 'former@example.com', key: 'HELP-202', page: 'browse',
-   needsInactive: true, needsInternal: true, needsAppRole: true,
-   expect: [mode: 'generic']],
-  [name: 'X11 deactivated internal account with a role x issue moved out of a service desk -> generic, never moved',
-   user: 'former@example.com', key: 'DEMO-150', page: 'browse',
-   needsInactive: true, needsInternal: true, needsAppRole: true,
-   expect: [mode: 'generic']],
-  [name: 'X12 internal viewer WITHOUT application access x request with a usable reporter -> generic, never share',
-   user: 'norole@example.com', key: 'HELP-202', page: 'browse',
-   needsInternal: true, needsNoAppRole: true,
-   expect: [mode: 'generic']],
-  [name: 'X13 internal viewer WITHOUT application access x issue moved out of a service desk -> generic, never moved',
-   user: 'norole@example.com', key: 'DEMO-150', page: 'browse',
-   needsInternal: true, needsNoAppRole: true,
-   expect: [mode: 'generic']],
-  // ---- existence-only modes (built into the full profile, off in MODE_ORDER):
-  //      called directly with the ctx decide() would build. `direct` names the
-  //      mode; null means "no answer". E03 assumes RESTRICTED_SCOPE 'in-scope'
-  //      (with 'all' or 'any-issue' it answers restricted: adjust). The missing
-  //      cases follow MISSING_ANSWERS, so they hold for full and exists-only. ----
-  [name: 'E01 restricted: internal viewer x restricted issue in scope -> restricted, nothing else',
-   user: 'alice@example.com', key: 'DEMO-101', page: 'browse', direct: 'restricted',
-   needsLevel: true, needsOffLevel: true, needsInternal: true, needsAppRole: true,
-   expect: [mode: 'restricted', issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', fallbackUrl: FALLBACK_URL]],
-  [name: 'E02 restricted: external account x restricted issue -> no answer',
-   user: 'contractor@example.org', key: 'DEMO-101', page: 'browse', direct: 'restricted',
-   needsLevel: true, needsOffLevel: true, expect: null],
-  [name: 'E03 restricted: level in SECURED_SKIP_LEVELS, scope in-scope -> no answer',
-   user: 'alice@example.com', key: 'DEMO-104', page: 'browse', direct: 'restricted',
-   needsLevel: true, needsOffLevel: true, needsInternal: true, needsAppRole: true, expect: null],
-  [name: 'E04 restricted: viewer on the level but without Browse -> no answer (restricted at any-issue: the level is not what blocks him)',
-   user: 'frank@example.com', key: 'DEMO-101', page: 'browse', direct: 'restricted',
-   needsLevel: true, needsOnLevel: true, needsInternal: true, needsAppRole: true,
-   expect: RESTRICTED_SCOPE == 'any-issue' ? [mode: 'restricted', issueKey: 'DEMO-101'] : null],
-  [name: 'E05 restricted: deactivated internal account with a role -> no answer',
-   user: 'former@example.com', key: 'DEMO-101', page: 'browse', direct: 'restricted',
-   needsLevel: true, needsOffLevel: true, needsInactive: true, needsInternal: true, needsAppRole: true,
-   expect: null],
-  [name: 'E06 missing: internal viewer x no such key -> missing when it answers (any-issue, restricted listed), else no answer',
-   user: 'alice@example.com', key: 'NOPE-99999', page: 'browse', direct: 'missing', missing: true,
-   needsInternal: true, needsAppRole: true,
-   expect: MISSING_ANSWERS ? [mode: 'missing', issueKey: 'NOPE-99999', helpCenter: HELP_CENTER, fallbackUrl: FALLBACK_URL]
-                           : null],
-  [name: 'E07 missing: internal viewer WITHOUT application access x no such key -> no answer',
-   user: 'norole@example.com', key: 'NOPE-99999', page: 'browse', direct: 'missing', missing: true,
-   needsInternal: true, needsNoAppRole: true, expect: null],
-  [name: 'E08 missing: deactivated internal account with a role x no such key -> no answer',
-   user: 'former@example.com', key: 'NOPE-99999', page: 'browse', direct: 'missing', missing: true,
-   needsInactive: true, needsInternal: true, needsAppRole: true, expect: null],
-  [name: 'E09 missing: internal viewer x existing key -> no answer',
-   user: 'alice@example.com', key: 'DEMO-101', page: 'browse', direct: 'missing',
-   needsInternal: true, needsAppRole: true, expect: null],
-]
-
-def um = ComponentAccessor.getUserManager()
-def im = ComponentAccessor.getIssueManager()
-def pmx = ComponentAccessor.getPermissionManager()
-def out = new StringBuilder()
-int pass = 0, fail = 0, skip = 0, na = 0
-MODE_ERRORS = []            // decide() records every exception a mode swallowed
-CASES.each { c ->
-    // Every case must say what it expects: null (no card / no answer) or a
-    // map that names a mode. Anything else proves nothing and fails.
-    if (!c.containsKey('expect') || !(c.expect == null || (c.expect instanceof Map && c.expect.mode))) {
-        fail++
-        out.append('FAIL ' + c.name + '  [expect must be null or a map with a mode]\n')
-        return
-    }
-    def u = um.getUserByName(c.user)
-    if (u == null) {
-        skip++
-        out.append('SKIP ' + c.name + '  [no such user: ' + c.user + ']\n')
-        return
-    }
-    def issue = im.getIssueObject(c.key)
-    // Preconditions: the data must match the scenario, or the case proves
-    // nothing. A key that does not resolve gives the generic card for every
-    // viewer, so it is a SKIP unless the case says the key must be missing.
-    // Every unmet precondition is listed.
-    def whys = []
-    if (c.missing) {
-        if (issue != null) { whys << ('key exists, but the case needs a missing one: ' + c.key) }
-    } else if (issue == null) {
-        whys << ('no such issue: ' + c.key)
-    } else {
-        if (c.needsLevel && issue.getSecurityLevelId() == null) { whys << (c.key + ' has no security level') }
-        if (c.needsArchived && !issue.getProjectObject()?.isArchived()) { whys << (c.key + ' is not in an archived project') }
-        if (c.needsSchemeBrowse && !ComponentAccessor.getPermissionSchemeManager()
-                .hasSchemePermission(ProjectPermissions.BROWSE_PROJECTS, issue, u, false)) {
-            whys << ('the permission scheme would not let ' + c.user + ' browse ' + c.key + ' even without issue security')
-        }
-        if (c.needsOnLevel && !passesSecurity(issue, u)) { whys << (c.user + ' is not on the level of ' + c.key) }
-        if (c.needsOffLevel && passesSecurity(issue, u)) { whys << (c.user + ' is on the level of ' + c.key + ', but the case needs a viewer the level blocks') }
-        // A direct mode call skips decide()'s "does the page work" check, so
-        // make sure the page really is broken for this viewer.
-        if (c.direct && pmx.hasPermission(ProjectPermissions.BROWSE_PROJECTS, issue, u)) {
-            whys << (c.user + ' can open ' + c.key + '; decide() would draw no card, so the mode must not be called')
-        }
-    }
-    if (c.needsInactive && u.isActive()) { whys << (c.user + ' is active, but the case needs a deactivated account') }
-    if (c.needsInternal && !isInternal(u)) { whys << (c.user + ' does not pass the internal-viewer policy') }
-    if (c.needsAppRole || c.needsNoAppRole) {
-        boolean role = ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
-        if (c.needsAppRole && !role) { whys << (c.user + ' holds no application role') }
-        if (c.needsNoAppRole && role) { whys << (c.user + ' holds an application role, but the case needs an account without one') }
-    }
-    if (whys) {
-        if (c.optional) {
-            na++
-            out.append('N/A  ' + c.name + '  [' + whys.join('; ') + ']\n')
+// >>> ROUTE -- build/sync_tests.py copies this block into tests/route_test.groovy
+// Which page is this, and which key does it name. Pure functions of the
+// request URI and the context path, so they can be tested without a request.
+//   route(uri, cp) -> [pageKind: 'browse' | 'agent' | null, key: 'ABC-1' | null]
+// Case-insensitive; the key is then re-read from the resolved issue, because
+// Jira serves lowercase keys and a moved issue still answers on its old key.
+// A Jira served under a context path (for example /jira) reports URIs that
+// start with it: it is stripped before matching, and prefixLinks() puts it
+// back on every root-relative link the card carries. A URI outside the
+// context path is not addressed to this Jira and names no page.
+def route = { String rawUri, String cp ->
+    String uri = rawUri ?: ''
+    String ctxPath = cp ?: ''
+    if (ctxPath) {
+        if (uri == ctxPath || uri.startsWith(ctxPath + '/')) {
+            uri = uri.substring(ctxPath.length())
         } else {
-            skip++
-            out.append('SKIP ' + c.name + '  [' + whys.join('; ') + ']\n')
+            return [pageKind: null, key: null]
         }
-        return
     }
-    String key = issue != null ? issue.getKey() : c.key
-    if (c.direct && MODES[c.direct] == null) {
-        skip++
-        out.append('SKIP ' + c.name + '  [mode ' + c.direct + ' is not in this build]\n')
-        return
-    }
-    def got = null
-    String err = null
-    MODE_ERRORS.clear()
-    long t0 = System.currentTimeMillis()
-    try {
-        if (c.direct) {
-            // The ctx decide() builds, then the one mode on its own.
-            def ctx = [user: u, issue: issue, key: key, urlKey: key, pageKind: c.page,
-                       proj: issue?.getProjectObject(), pm: pmx, BROWSE: ProjectPermissions.BROWSE_PROJECTS]
-            got = (MODES[c.direct] as Closure)(ctx)
-        } else {
-            got = decide(u, issue, key, c.page)
-        }
-    } catch (Throwable t) {
-        err = t.getClass().getName() + ': ' + t.getMessage()
-    }
-    long ms = System.currentTimeMillis() - t0
-    def problems = []
-    if (err != null) {
-        problems << ('threw ' + err)
-    } else if (c.containsKey('expect') && c.expect == null) {
-        if (got != null) { problems << ((c.direct ? 'expected no answer, got ' : 'expected no card, got ') + got) }
-    } else if (!(got instanceof Map)) {
-        problems << ('expected a card, got ' + got)
+    // Each matcher is asked once with find() and read with group(1), so the
+    // result does not depend on how Groovy coerces a Matcher to boolean.
+    // (1.0.0 coerced the same matcher twice; measured correct on Groovy 4.0.8,
+    // so that was a readability and testability change, not a fix.)
+    String kind = null
+    String key  = null
+    def mBrowse = (uri =~ '(?i)^/browse/([a-z][a-z0-9_]*-[0-9]+)')
+    if (mBrowse.find()) {
+        kind = 'browse'
+        key  = mBrowse.group(1).toUpperCase()
     } else {
-        (c.expect ?: [:]).each { k, v ->
-            if (got[k] != v) { problems << (k + ': expected <' + v + '> got <' + got[k] + '>') }
+        def mAgent = (uri =~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?/([a-z][a-z0-9_]*-[0-9]+)$')
+        if (mAgent.find()) {
+            kind = 'agent'
+            key  = mAgent.group(1).toUpperCase()
+        } else if (uri ==~ '(?i)^/projects/[a-z0-9_]+/queues(?:/.*)?$') {
+            kind = 'agent'
         }
     }
-    // A mode that threw was silently skipped by decide(). That is right in
-    // production and wrong in a test: a mode that always throws would pass
-    // every negative case. So it fails the case here.
-    MODE_ERRORS.each { problems << ('mode threw: ' + it) }
-    if (problems) { fail++ } else { pass++ }
-    out.append((problems ? 'FAIL ' : 'PASS ') + c.name + '  [' + ms + ' ms]\n')
-    out.append('     got: ' + (got instanceof Map ? JsonOutput.toJson(got) : String.valueOf(got)) + '\n')
-    problems.each { out.append('     !! ' + it + '\n') }
+    if (kind && !PAGES.contains(kind)) { kind = null; key = null }
+    return [pageKind: kind, key: key]
 }
-// An empty or partial run is not a pass: every case must have run and passed.
-// N/A (an optional case whose preconditions no data on the instance can meet)
-// is reported but does not spoil the verdict.
-String verdict = (fail == 0 && skip == 0 && pass > 0) ? 'OK' : 'NOT OK'
-return 'RESULT ' + verdict + '  SUMMARY pass=' + pass + ' fail=' + fail + ' skip=' + skip + ' na=' + na +
-       (verdict == 'OK' ? '' : '  (every case must run and pass; a SKIP is not a pass)') + '\n' + out.toString()
+
+// Puts the context path in front of every root-relative link of a payload.
+// Protocol-relative links (//host/...) and links that already carry the
+// prefix, or equal it, are left alone. CharSequence, not String, so a
+// GString written in CONFIG is treated like any other text.
+def prefixLinks = { Map p, String cp ->
+    if (p == null || !cp) { return p }
+    ['issueUrl', 'portalUrl', 'helpCenter', 'fallbackUrl', 'myRequests'].each { k ->
+        def v = p[k]
+        if (v instanceof CharSequence) {
+            String s = v.toString()
+            if (s.startsWith('/') && !s.startsWith('//') && s != cp && !s.startsWith(cp + '/')) {
+                p[k] = cp + s
+            }
+        }
+    }
+    return p
+}
+// <<< ROUTE
+
+def payload  = null
+String pageKind = null
+
+try {
+    // `req` stays untyped on purpose: Jira 11 returns a jakarta.servlet
+    // request here, earlier versions a javax.servlet one.
+    def req = ExecutingHttpRequest.get()
+    String cp = req?.getContextPath() ?: ''
+    def r = route(req?.getRequestURI() ?: '', cp)
+    pageKind = r.pageKind
+    if (pageKind) {
+        String urlKey = r.key
+        def key  = urlKey
+        def user = ComponentAccessor.getJiraAuthenticationContext().getLoggedInUser()
+        if (user) {
+            def issue = key ? ComponentAccessor.getIssueManager().getIssueObject(key) : null
+            if (issue != null) { key = issue.getKey() }   // canonical key, not the URL's
+            payload = prefixLinks(decide(user, issue, key, pageKind, urlKey), cp)
+        }
+    }
+} catch (Throwable ignored) {
+    payload = null          // never break a page over a helper
+}
+
+// >>> RENDER -- build/sync_tests.py copies this block verbatim into
+//               tests/render_test.groovy. The client script inside must
+//               stay free of comments.
+// render/render.groovy -- payload -> inline client script. Always built in,
+// the RENDER section. build/assemble.py replaces the @@CLIENT@@ line with
+// render/client.js, full-line comments removed, and then runs
+// build/strip_client_comments.py --check on the result.
+
+if (payload) {
+    payload.page = pageKind        // 'browse' | 'agent' -- picks the host node
+                                   // and the wording of the card
+    // JsonOutput does not escape '<'; without this a value containing
+    // "</script>" would terminate the inline block. These are legal JSON
+    // escapes, so the JS literal restores them unchanged.
+    def safeJson = { obj ->
+        JsonOutput.toJson(obj).replace('<', '\\u003c')
+                              .replace('>', '\\u003e')
+                              .replace('&', '\\u0026')
+    }
+    def dataJson = safeJson(payload)
+    def textJson = safeJson(TEXT)
+    // Client script. Inside the dollar-slashy string below, a dollar sign
+    // followed by a name interpolates and dollar-slash is an escaped slash,
+    // so the block holds exactly two interpolations (dataJson, textJson) and
+    // no other dollar sign. It carries no comments: what it does is explained
+    // at the top of render/client.js and in docs/DESIGN.md.
+    writer.write($/
+<script>
+(function () {
+  if (window.__jsmBrowseErrorHelper) { return; }
+  window.__jsmBrowseErrorHelper = true;
+
+  var d = $dataJson;
+  var T = $textJson;
+  var COPY_LABEL = T.copyLabel;
+  var AGENT = (d.page === 'agent');
+
+  var CSS = [
+    '.jbh-wrap{max-width:520px;margin:8px auto 0;padding:0 16px;box-sizing:border-box;text-align:center;',
+    'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;}',
+    '.jbh-card{position:relative;padding:28px 28px 24px;border-radius:8px;background:#FFFFFF;',
+    'border:1px solid #DFE1E6;box-shadow:0 1px 1px rgba(9,30,66,.10),0 0 1px rgba(9,30,66,.13);',
+    'opacity:0;transform:translateY(10px);animation:jbh-in .36s cubic-bezier(.2,0,0,1) .05s forwards;}',
+    '@keyframes jbh-in{to{opacity:1;transform:none}}',
+    '.jbh-badge{width:52px;height:52px;margin:0 auto 16px;border-radius:50%;display:flex;',
+    'align-items:center;justify-content:center;color:#0052CC;background:#E9F2FF;',
+    'box-shadow:0 0 0 7px rgba(233,242,255,.5);transform:scale(.88);',
+    'animation:jbh-pop .42s cubic-bezier(.2,0,0,1) .14s forwards;}',
+    '@keyframes jbh-pop{to{transform:scale(1)}}',
+    '.jbh-badge svg{display:block}',
+    '.jbh-title{margin:0 0 8px;font-size:16px;line-height:1.32;font-weight:600;color:#172B4D;letter-spacing:-.003em}',
+    '.jbh-text{margin:0 0 20px;font-size:13.5px;line-height:1.55;color:#5E6C84}',
+    '.jbh-who{display:inline-flex;align-items:center;gap:8px;margin:0 0 16px;padding:6px 14px 6px 6px;',
+    'border-radius:20px;background:#F4F5F7;font-size:13px;color:#172B4D;max-width:100%;overflow-wrap:anywhere}',
+    '.jbh-av{flex:0 0 24px;width:24px;height:24px;border-radius:50%;background:#0052CC;color:#FFFFFF;display:flex;',
+    'align-items:center;justify-content:center;font-size:11px;font-weight:700;letter-spacing:.2px}',
+    '.jbh-quote{position:relative;margin:0 0 16px;padding:14px 16px;border-radius:6px;',
+    'background:#F7F8F9;border:1px solid #DFE1E6;text-align:left;font-size:12.5px;line-height:1.6;',
+    'color:#42526E;word-break:break-word}',
+    '.jbh-quote b{display:block;margin-bottom:4px;color:#172B4D;font-weight:600}',
+    '.jbh-people{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:0 0 16px}',
+    '.jbh-people .jbh-who{margin:0}',
+    '.jbh-role{color:#5E6C84;font-size:12px}',
+    '.jbh-actions{display:flex;flex-direction:column;align-items:center;gap:12px}',
+    '.jbh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;',
+    'padding:0 18px;border-radius:4px;font-size:14px;font-weight:500;text-decoration:none;',
+    'border:none;cursor:pointer;font-family:inherit;',
+    'transition:background .15s ease,box-shadow .15s ease,transform .15s ease}',
+    '.jbh-btn-primary{background:#0052CC;color:#FFFFFF !important;box-shadow:0 1px 2px rgba(9,30,66,.2)}',
+    '.jbh-btn-primary:hover{background:#0065FF;transform:translateY(-1px);box-shadow:0 4px 8px rgba(9,30,66,.16)}',
+    '.jbh-btn-primary:active{background:#0747A6;transform:none;box-shadow:none}',
+    '.jbh-btn-done{background:#216E4E !important;box-shadow:none !important;transform:none !important}',
+    '.jbh-btn-warn{background:#974F0C !important}',
+    '.jbh-btn svg{opacity:.9}',
+    '.jbh-link{font-size:13px;color:#42526E;text-decoration:none;border-bottom:1px solid transparent;',
+    'transition:color .15s ease,border-color .15s ease}',
+    '.jbh-link:hover{color:#0052CC;border-bottom-color:#0052CC}',
+    '.jbh-btn:focus-visible,.jbh-link:focus-visible{box-shadow:0 0 0 2px #FFFFFF,0 0 0 4px #0052CC}',
+    '@media (prefers-reduced-motion:reduce){.jbh-card,.jbh-badge{animation:none;opacity:1;transform:none}}'
+  ].join('');
+
+  var ICON_PORTAL = "<svg width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'></path><polyline points='15 3 21 3 21 9'></polyline><line x1='10' y1='14' x2='21' y2='3'></line></svg>";
+  var ICON_HELP   = "<svg width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><circle cx='12' cy='12' r='10'></circle><path d='M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3'></path><line x1='12' y1='17' x2='12.02' y2='17'></line></svg>";
+  var ICON_SHARE  = "<svg width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'></path><circle cx='9' cy='7' r='4'></circle><line x1='19' y1='8' x2='19' y2='14'></line><line x1='22' y1='11' x2='16' y2='11'></line></svg>";
+  var ICON_ARROW  = "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><line x1='5' y1='12' x2='19' y2='12'></line><polyline points='12 5 19 12 12 19'></polyline></svg>";
+  var ICON_LOCK   = "<svg width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><rect x='3' y='11' width='18' height='11' rx='2' ry='2'></rect><path d='M7 11V7a5 5 0 0 1 10 0v4'></path></svg>";
+  var ICON_COPY   = "<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true' focusable='false'><rect x='9' y='9' width='13' height='13' rx='2'></rect><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'></path></svg>";
+
+  function fmt(template, vars) {
+    return String(template).replace(/\{([A-Za-z]+)\}/g, function (all, name) {
+      return (vars && Object.prototype.hasOwnProperty.call(vars, name)) ? String(vars[name]) : all;
+    });
+  }
+
+  function style() {
+    if (document.getElementById('jbh-style')) { return; }
+    var s = document.createElement('style');
+    s.id = 'jbh-style';
+    s.appendChild(document.createTextNode(CSS));
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) { n.className = cls; }
+    if (text) { n.appendChild(document.createTextNode(text)); }
+    return n;
+  }
+
+  function withIcon(node, svg) {
+    var s = document.createElement('span');
+    s.innerHTML = svg;
+    node.appendChild(s);
+    return node;
+  }
+
+  function tokens(name) {
+    var out = [];
+    var parts = (name || '').split(' ');
+    for (var i = 0; i < parts.length; i++) {
+      var t = parts[i].replace(/[^A-Za-z\u00C0-\u024F'-]/g, '');
+      if (t) { out.push(t); }
+    }
+    return out;
+  }
+
+  function greetingFor(name) {
+    var t = tokens(name);
+    var first = t.length ? t[0] : '';
+    var rawFirst = (name || '').split(' ')[0];
+    var usable = first.length > 2 && first === rawFirst && first !== first.toUpperCase();
+    return usable ? fmt(T.greetingNamed, { first: first }) : T.greetingPlain;
+  }
+
+  function greeting() { return greetingFor(d.reporterName); }
+
+  function initialsOf(name) {
+    var t = tokens(name);
+    if (!t.length) { return '?'; }
+    var a = t[0].charAt(0);
+    var b = t.length > 1 ? t[t.length - 1].charAt(0) : '';
+    return (a + b).toUpperCase();
+  }
+
+  function initials() { return initialsOf(d.reporterName); }
+
+  function origin() {
+    return window.location.protocol + '//' + window.location.host;
+  }
+
+  function shareMessage() {
+    return greeting() + ' ' + fmt(T.shareMessage,
+      { key: d.issueKey, url: origin() + d.portalUrl, mail: d.myMail });
+  }
+
+  function levelPhrase() {
+    return d.levelName ? fmt(T.levelNamed, { level: d.levelName }) : T.levelUnnamed;
+  }
+
+  function hasField() {
+    return !!(d.fieldName || d.hasField);
+  }
+
+  function securedLead() {
+    var n = (d.people || []).length;
+    var s = fmt(T.securedLead, { key: d.issueKey, levelPhrase: levelPhrase() });
+    if (hasField()) {
+      s += ' ' + (d.fieldName ? fmt(T.securedLeadField, { field: d.fieldName }) : T.securedLeadFieldUnnamed);
+      if (n > 1) {
+        s += ' ' + T.securedLeadMany;
+      } else if (n === 1) {
+        s += ' ' + T.securedLeadOne;
+      } else {
+        s += ' ' + T.securedLeadNobody;
+      }
+      if (AGENT) {
+        s += ' ' + T.securedLeadAgent;
+      }
+    } else {
+      s += ' ' + T.securedLeadNoField;
+    }
+    return s;
+  }
+
+  function securedMessage() {
+    var ppl = d.people || [];
+    var body = d.fieldName
+      ? fmt(T.securedMessage, { url: origin() + d.issueUrl, mail: d.myMail, field: d.fieldName })
+      : fmt(T.securedMessageFieldUnnamed, { url: origin() + d.issueUrl, mail: d.myMail });
+    return (ppl.length === 1 ? greetingFor(ppl[0].name) : T.greetingPlain) + ' ' + body;
+  }
+
+  function copyText(text, btn) {
+    if (btn.getAttribute('data-jbh-busy') === '1') { return; }
+
+    function settle(label, cls) {
+      btn.setAttribute('data-jbh-busy', '1');
+      btn.textContent = '';
+      btn.appendChild(document.createTextNode(label));
+      btn.className = 'jbh-btn jbh-btn-primary ' + cls;
+      setTimeout(function () {
+        btn.textContent = '';
+        btn.appendChild(document.createTextNode(COPY_LABEL));
+        withIcon(btn, ICON_COPY);
+        btn.className = 'jbh-btn jbh-btn-primary';
+        btn.removeAttribute('data-jbh-busy');
+      }, 2200);
+    }
+    function ok() { settle(T.copied, 'jbh-btn-done'); }
+    function fail() { settle(T.copyFailed, 'jbh-btn-warn'); }
+
+    function legacy() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var done = false;
+      try { done = document.execCommand('copy'); } catch (e) { done = false; }
+      document.body.removeChild(ta);
+      if (done) { ok(); } else { fail(); }
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok, legacy);
+    } else {
+      legacy();
+    }
+  }
+
+  function card() {
+    var wrap = el('div', 'jbh-wrap');
+    wrap.id = 'jsm-browse-error-helper';
+    var box = el('div', 'jbh-card');
+    var badge = el('div', 'jbh-badge');
+    var actions = el('div', 'jbh-actions');
+
+    if (d.mode === 'portal') {
+      badge.innerHTML = ICON_PORTAL;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.portalTitle));
+      box.appendChild(el('p', 'jbh-text', AGENT ? T.portalTextAgent : T.portalText));
+
+      var go = el('a', 'jbh-btn jbh-btn-primary');
+      go.href = d.portalUrl;
+      go.appendChild(document.createTextNode(T.portalOpen));
+      withIcon(go, ICON_ARROW);
+      actions.appendChild(go);
+
+      var all = el('a', 'jbh-link', T.portalMyRequests);
+      all.href = d.myRequests;
+      actions.appendChild(all);
+
+    } else if (d.mode === 'moved') {
+      badge.innerHTML = ICON_PORTAL;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.movedTitle));
+
+      var p1 = el('p', 'jbh-text');
+      p1.appendChild(document.createTextNode(
+        (d.oldKey ? fmt(T.movedFrom, { oldKey: d.oldKey, project: d.projectName })
+                  : fmt(T.movedFromUnknown, { project: d.projectName })) + ' '));
+      var keyLink = el('a', 'jbh-link');
+      keyLink.href = d.issueUrl;
+      keyLink.appendChild(document.createTextNode(d.issueKey));
+      p1.appendChild(keyLink);
+      p1.appendChild(document.createTextNode(T.movedAfterLink));
+      box.appendChild(p1);
+
+      box.appendChild(el('p', 'jbh-text',
+        fmt(T.movedNoAccess, { project: d.projectName, key: d.issueKey })));
+
+      var ask = el('a', 'jbh-btn jbh-btn-primary');
+      ask.href = d.fallbackUrl;
+      ask.appendChild(document.createTextNode(T.movedAsk));
+      withIcon(ask, ICON_ARROW);
+      actions.appendChild(ask);
+
+      var open = el('a', 'jbh-link');
+      open.href = d.issueUrl;
+      open.appendChild(document.createTextNode(fmt(T.openKey, { key: d.issueKey })));
+      actions.appendChild(open);
+
+    } else if (d.mode === 'share') {
+      badge.innerHTML = ICON_SHARE;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.shareTitle));
+      box.appendChild(el('p', 'jbh-text',
+        fmt(AGENT ? T.shareTextAgent : T.shareText, { key: d.issueKey })));
+
+      var who = el('div', 'jbh-who');
+      who.appendChild(el('div', 'jbh-av', initials()));
+      who.appendChild(document.createTextNode(d.reporterName));
+      box.appendChild(who);
+
+      var quote = el('div', 'jbh-quote');
+      quote.appendChild(el('b', null, T.messageHeadingThem));
+      quote.appendChild(document.createTextNode(shareMessage()));
+      box.appendChild(quote);
+
+      var copy = el('button', 'jbh-btn jbh-btn-primary');
+      copy.type = 'button';
+      copy.setAttribute('aria-live', 'polite');
+      copy.appendChild(document.createTextNode(COPY_LABEL));
+      withIcon(copy, ICON_COPY);
+      copy.addEventListener('click', function () { copyText(shareMessage(), copy); });
+      actions.appendChild(copy);
+
+      var esc = el('a', 'jbh-link', T.shareEscalate);
+      esc.href = d.fallbackUrl;
+      actions.appendChild(esc);
+
+    } else if (d.mode === 'secured') {
+      var ppl = d.people || [];
+      badge.innerHTML = ICON_LOCK;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.securedTitle));
+      box.appendChild(el('p', 'jbh-text', securedLead()));
+
+      if (ppl.length) {
+        var row = el('div', 'jbh-people');
+        for (var k = 0; k < ppl.length; k++) {
+          var chip = el('div', 'jbh-who');
+          chip.appendChild(el('div', 'jbh-av', initialsOf(ppl[k].name)));
+          chip.appendChild(document.createTextNode(ppl[k].name));
+          chip.appendChild(el('span', 'jbh-role', ppl[k].role));
+          row.appendChild(chip);
+        }
+        box.appendChild(row);
+      }
+
+      if (hasField()) {
+        var sq = el('div', 'jbh-quote');
+        sq.appendChild(el('b', null, ppl.length ? T.messageHeadingThem : T.messageHeading));
+        sq.appendChild(document.createTextNode(securedMessage()));
+        box.appendChild(sq);
+
+        var sc = el('button', 'jbh-btn jbh-btn-primary');
+        sc.type = 'button';
+        sc.setAttribute('aria-live', 'polite');
+        sc.appendChild(document.createTextNode(COPY_LABEL));
+        withIcon(sc, ICON_COPY);
+        sc.addEventListener('click', function () { copyText(securedMessage(), sc); });
+        actions.appendChild(sc);
+
+        var again = el('a', 'jbh-link', fmt(T.securedOpenAgain, { key: d.issueKey }));
+        again.href = d.issueUrl;
+        actions.appendChild(again);
+      }
+
+      var sEsc = el('a', 'jbh-link',
+        hasField() ? T.securedEscalateField : T.securedEscalateNoField);
+      sEsc.href = d.fallbackUrl;
+      actions.appendChild(sEsc);
+
+    } else if (d.mode === 'restricted') {
+      badge.innerHTML = ICON_LOCK;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.restrictedTitle));
+      box.appendChild(el('p', 'jbh-text',
+        fmt(AGENT ? T.restrictedTextAgent : T.restrictedText, { key: d.issueKey })));
+
+      var rAsk = el('a', 'jbh-btn jbh-btn-primary');
+      rAsk.href = d.fallbackUrl;
+      rAsk.appendChild(document.createTextNode(T.raiseRequest));
+      withIcon(rAsk, ICON_ARROW);
+      actions.appendChild(rAsk);
+
+      var rOpen = el('a', 'jbh-link', fmt(T.restrictedOpenAgain, { key: d.issueKey }));
+      rOpen.href = d.issueUrl;
+      actions.appendChild(rOpen);
+
+    } else if (d.mode === 'missing') {
+      badge.innerHTML = ICON_HELP;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.missingTitle));
+      box.appendChild(el('p', 'jbh-text', fmt(T.missingText, { key: d.issueKey })));
+
+      var mHc = el('a', 'jbh-btn jbh-btn-primary');
+      mHc.href = d.helpCenter;
+      mHc.appendChild(document.createTextNode(T.openHelpCenter));
+      withIcon(mHc, ICON_ARROW);
+      actions.appendChild(mHc);
+
+      var mRaise = el('a', 'jbh-link', T.genericEscalate);
+      mRaise.href = d.fallbackUrl;
+      actions.appendChild(mRaise);
+
+    } else {
+      badge.innerHTML = ICON_HELP;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', AGENT ? T.genericTitleAgent : T.genericTitle));
+      box.appendChild(el('p', 'jbh-text', AGENT ? T.genericTextAgent : T.genericText));
+
+      if (AGENT) {
+        var askUs = el('a', 'jbh-btn jbh-btn-primary');
+        askUs.href = d.fallbackUrl;
+        askUs.appendChild(document.createTextNode(T.raiseRequest));
+        withIcon(askUs, ICON_ARROW);
+        actions.appendChild(askUs);
+
+        var hcLink = el('a', 'jbh-link', T.openHelpCenter);
+        hcLink.href = d.helpCenter;
+        actions.appendChild(hcLink);
+      } else {
+        var hc = el('a', 'jbh-btn jbh-btn-primary');
+        hc.href = d.helpCenter;
+        hc.appendChild(document.createTextNode(T.openHelpCenter));
+        withIcon(hc, ICON_ARROW);
+        actions.appendChild(hc);
+
+        var raise = el('a', 'jbh-link', T.genericEscalate);
+        raise.href = d.fallbackUrl;
+        actions.appendChild(raise);
+      }
+    }
+
+    box.appendChild(actions);
+    wrap.appendChild(box);
+    return wrap;
+  }
+
+  function inject() {
+    var host = document.querySelector('.issue-error') ||
+               document.getElementById('unlicensed-project-type');
+    if (!host) { return false; }
+    if (document.getElementById('jsm-browse-error-helper')) { return true; }
+    style();
+    var kids = [].slice.call(host.children);
+    for (var i = 0; i < kids.length; i++) { kids[i].style.display = 'none'; }
+    host.appendChild(card());
+    return true;
+  }
+
+  var obs = null;
+  function stopObserver() {
+    if (obs) { obs.disconnect(); obs = null; }
+  }
+
+  function start() {
+    if (inject()) { return; }
+    var tries = 0;
+    var timer = setInterval(function () {
+      tries = tries + 1;
+      if (inject() || tries > 40) { clearInterval(timer); stopObserver(); }
+    }, 250);
+    if (window.MutationObserver) {
+      obs = new MutationObserver(function () {
+        if (inject()) { clearInterval(timer); stopObserver(); }
+      });
+      obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+      setTimeout(stopObserver, 15000);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+</script>
+/$)
+}
+// <<< RENDER
