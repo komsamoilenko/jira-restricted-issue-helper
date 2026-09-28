@@ -275,8 +275,8 @@ def mailOf = { u ->
 // ApplicationRoleManager.hasAnyRole instead, present unchanged over the same
 // range. hasAnyRole does not look at the account's status: a deactivated
 // account that is still in a licensed group answers true, where USE answered
-// false (measured on 2 676 accounts, 296 of them deactivated with a role).
-// With isActive() in front, the two agreed for every account.
+// false (measured on every account of one instance: about one deactivated
+// account in six). With isActive() in front, the two agreed for every account.
 def hasAppAccess = { u ->
     u != null && u.isActive() && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
 }
