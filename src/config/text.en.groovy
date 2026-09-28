@@ -46,7 +46,7 @@ final Map    TEXT = [
     levelUnnamed         : 'a security level',
     securedLead          : '{key} is protected by {levelPhrase}, so only the people and groups on that level can open it.',
     securedLeadField     : 'You do not have to join them: being added to its "{field}" field opens this one issue to you, and nothing else.',
-    securedLeadFieldUnnamed : 'You do not have to join them: anyone who can edit the issue can add you to it, which opens this one issue to you and nothing else.',
+    securedLeadFieldUnnamed : 'You do not have to join them: this issue has a field for letting one more person in, and being added to it opens this one issue to you, and nothing else.',
     securedLeadMany      : 'Either of the people below can do that in a few seconds.',
     securedLeadOne       : 'The person below can do that in a few seconds.',
     securedLeadNobody    : 'Anyone who can edit the issue can add you, so send the message below to whoever shared the link with you.',

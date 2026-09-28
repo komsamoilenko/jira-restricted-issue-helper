@@ -26,8 +26,13 @@ MODES['secured'] = { ctx ->
     if (!hasAppAccess(user)) { return null }
     def islm  = ComponentAccessor.getComponent(IssueSecurityLevelManager)
     def level = islm.getSecurityLevel(levelId)
-    if (level == null || !SECURED_SCHEMES.contains(level.getSchemeId() as Long) ||
-        SECURED_SKIP_LEVELS.contains(levelId as Long)) { return null }
+    // Ids are compared as Long whatever the CONFIG list holds (12345 or
+    // 12345L), so a missing L suffix can neither switch the card off nor
+    // skip an exclusion.
+    def schemesInScope = SECURED_SCHEMES.collect { it as Long }
+    def levelsToSkip   = SECURED_SKIP_LEVELS.collect { it as Long }
+    if (level == null || !schemesInScope.contains(level.getSchemeId() as Long) ||
+        levelsToSkip.contains(levelId as Long)) { return null }
     // Already on the level: then the level is not what blocks them.
     if (passesSecurity(issue, user)) { return null }
 
@@ -101,7 +106,8 @@ MODES['secured'] = { ctx ->
 
     // What the card may say (DISCLOSURE, with per-level overrides). People are
     // named only when there is a field to fill in.
-    def disc = DISCLOSURE + (DISCLOSURE_BY_LEVEL[levelId as Long] ?: [:])
+    def perLevel = DISCLOSURE_BY_LEVEL.find { k, v -> (k as Long) == (levelId as Long) }?.value ?: [:]
+    def disc = DISCLOSURE + perLevel
     def people = (field != null && disc.people) ? peopleFor(ctx) : []
 
     return [mode: 'secured', issueKey: issue.getKey(), issueUrl: '/browse/' + issue.getKey(),

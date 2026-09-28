@@ -18,12 +18,12 @@ RENDER, or CONFIG_SECURED_OFF (CONFIG with the restricted-card kill switch
 turned off, for the kill-switch test).
 
 Usage:
-  python build/sync_tests.py            refresh every test from src/
+  python build/sync_tests.py            refresh every test from dist/full.groovy
   python build/sync_tests.py --check    exit 1 if any test is out of date
   python build/sync_tests.py --source path/to/your-configured-fragment.groovy
 
-Run it after every change to the fragment, including CONFIG edits, so the
-tests use your real values.
+Run it after every rebuild (build/assemble.py) and after every CONFIG edit in
+your configured copy, so the tests use your real values.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = ROOT / 'src' / 'browse-error-helper.groovy'
+DEFAULT_SOURCE = ROOT / 'dist' / 'full.groovy'
 TESTS = sorted((ROOT / 'tests').glob('*.groovy'))
 
 KILL_SWITCH_ON = 'final boolean SECURED_CARD = true'

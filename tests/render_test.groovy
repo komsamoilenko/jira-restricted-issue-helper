@@ -1,5 +1,5 @@
 // ============================================================================
-//  Render test for src/browse-error-helper.groovy          READ-ONLY
+//  Render test for dist/full.groovy          READ-ONLY
 // ----------------------------------------------------------------------------
 //  Renders every card variant from the deployed RENDER block (copied below by
 //  build/sync_tests.py) with synthetic payloads, and returns the markup each
@@ -15,23 +15,21 @@
 //  <div class="issue-error"></div> and open it in a browser.
 // ============================================================================
 // >>> COPY IMPORTS
+import com.atlassian.jira.application.ApplicationRoleManager
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.issue.security.IssueSecurityLevelManager
+import com.atlassian.jira.permission.ProjectPermissions
+import com.atlassian.jira.issue.operation.IssueOperations
+import com.atlassian.jira.issue.security.IssueSecuritySchemeManager
 import com.atlassian.application.api.ApplicationKey
 import com.atlassian.jira.application.ApplicationAuthorizationService
-import com.atlassian.jira.component.ComponentAccessor
-import com.atlassian.jira.issue.operation.IssueOperations
-import com.atlassian.jira.issue.security.IssueSecurityLevelManager
-import com.atlassian.jira.issue.security.IssueSecuritySchemeManager
-import com.atlassian.jira.permission.GlobalPermissionKey
-import com.atlassian.jira.security.plugin.ProjectPermissionKey
 import com.atlassian.jira.web.ExecutingHttpRequest
 import groovy.json.JsonOutput
-import java.lang.reflect.InvocationHandler
-import java.lang.reflect.Proxy
 // <<< COPY IMPORTS
 // >>> COPY CONFIG
 // >>> CONFIG =================================================================
-//  Every deployment-specific value lives between this line and "<<< CONFIG".
-//  Nothing else in this file needs editing; docs/CONFIG.md explains each one.
+//  Every deployment-specific value lives in this block. Nothing else in the
+//  assembled file needs editing; docs/CONFIG.md explains each one.
 //  The defaults are PLACEHOLDERS: until you replace them, the restricted card
 //  never fires and "Raise a request" points at a request type that does not
 //  exist on your instance.
@@ -40,6 +38,12 @@ import java.lang.reflect.Proxy
 // Service Management request type that handles access questions.
 // Format: /servicedesk/customer/portal/<portal id>/create/<request type id>
 final String FALLBACK_URL = '/servicedesk/customer/portal/1/create/1'
+
+// Per-project escalation targets, by project key. A project not listed here
+// uses FALLBACK_URL. Read only by cards that already confirm the issue
+// exists; the generic card always uses FALLBACK_URL, so a hidden issue and a
+// missing key still get the same card.
+final Map    ESCALATION_BY_PROJECT = [:]
 
 // The customer portal's Help Center (stock Jira Service Management path).
 final String HELP_CENTER  = '/servicedesk/customer/portals'
@@ -52,6 +56,16 @@ final String MY_REQUESTS  = '/servicedesk/customer/user/requests?status=open'
 // field's configure link). An unknown id is harmless: the portal and share
 // modes stop applying, and moved-issue detection falls back to key history.
 final String RT_FIELD     = 'customfield_12345'
+
+// Which dead-end pages the helper covers: 'browse' is /browse/<KEY>, 'agent'
+// is the Service Management agent view. Remove one to leave that page alone.
+final List   PAGES        = ['browse', 'agent']
+
+// The order in which the modes are tried; the first one that answers wins,
+// and the generic card is the fallback that always exists. A name whose
+// module is not in this build is skipped, so the list can stay as it is
+// across profiles. Remove a name to switch that mode off.
+final List   MODE_ORDER   = ['portal', 'share', 'moved', 'secured']
 
 // Kill switch for the "moved out of the service desk" card. false = every
 // viewer it would cover gets the generic card instead.
@@ -66,11 +80,12 @@ final boolean SECURED_CARD = true
 // reporter to ask for a Share.
 final List   BOT_NAMES    = ['jira automation', 'jira', 'automation for jira', 'anonymous']
 
-// Internal-viewer policy: who may be told that a restricted issue exists.
-// Each entry is a regular expression matched against the WHOLE domain part
-// (after the "@", lower-cased) of an address: 'example\\.com' matches
-// someone@example.com only, 'example\\.[a-z]+' matches any top-level domain.
-// An empty list means nobody is internal, so the restricted card never fires.
+// Internal-viewer policy, mail-domain variant: who may be told that a
+// restricted issue exists. Each entry is a regular expression matched against
+// the WHOLE domain part (after the "@", lower-cased) of an address:
+// 'example\\.com' matches someone@example.com only, 'example\\.[a-z]+'
+// matches any top-level domain. An empty list means nobody is internal, so
+// the restricted card never fires.
 final List   INTERNAL_MAIL_DOMAINS = ['example\\.com']
 
 // true  = the USERNAME must match INTERNAL_MAIL_DOMAINS as well as the e-mail
@@ -80,6 +95,12 @@ final List   INTERNAL_MAIL_DOMAINS = ['example\\.com']
 // false = the e-mail address alone decides. Choose this only where users
 //         cannot change their own e-mail address.
 final boolean INTERNAL_REQUIRE_USERNAME = true
+
+// Internal-viewer policy, group variant (read only when the build includes
+// policy/internal-group instead of policy/internal-mail-domain): the viewer
+// must be in at least one of these groups. Use a group that is maintained to
+// equal staff exactly; an empty list means nobody is internal.
+final List   INTERNAL_GROUPS = ['jira-staff']
 
 // Issue security SCHEMES whose levels may get the restricted card; levels of
 // every other scheme keep the generic card. Keep the L suffix: getSchemeId()
@@ -91,6 +112,22 @@ final List   SECURED_SCHEMES     = [12345L]
 // NAME or their MEMBERS are what the level protects (compartments for people
 // matters, for example). Level ids, with the L suffix.
 final List   SECURED_SKIP_LEVELS = [12346L, 12347L]
+
+// What the restricted card may SAY once every gate has passed (the gates
+// always run; this only trims the content):
+//   levelName  name the security level              (false: "a security level")
+//   fieldName  name the field that opens the issue  (false: "the field on the issue that lets one more person see it")
+//   people     name the reporter and assignee       (false: "ask whoever shared the link with you")
+final Map    DISCLOSURE = [levelName: true, fieldName: true, people: true]
+
+// Per-level overrides of DISCLOSURE, by level id with the L suffix, for
+// example [12348L: [people: false]] or [12349L: [levelName: false, people: false]].
+final Map    DISCLOSURE_BY_LEVEL = [:]
+
+// When a level grants access through several multi-user picker fields that
+// are all on the edit screen, prefer these, in order (field ids such as
+// 'customfield_10100', or just the number). Empty = the lowest field id wins.
+final List   SECURED_FIELD_PREFERENCE = []
 
 // Every piece of text the card shows, in one place. {placeholders} are filled
 // in by the card: {key} issue key, {oldKey} its former key, {project} project
@@ -140,12 +177,14 @@ final Map    TEXT = [
     levelUnnamed         : 'a security level',
     securedLead          : '{key} is protected by {levelPhrase}, so only the people and groups on that level can open it.',
     securedLeadField     : 'You do not have to join them: being added to its "{field}" field opens this one issue to you, and nothing else.',
+    securedLeadFieldUnnamed : 'You do not have to join them: this issue has a field for letting one more person in, and being added to it opens this one issue to you, and nothing else.',
     securedLeadMany      : 'Either of the people below can do that in a few seconds.',
     securedLeadOne       : 'The person below can do that in a few seconds.',
     securedLeadNobody    : 'Anyone who can edit the issue can add you, so send the message below to whoever shared the link with you.',
     securedLeadAgent     : 'Once you are added, open it with the link below rather than from a queue: queues also need an agent licence.',
     securedLeadNoField   : 'There is no field on this issue for letting one more person in. If you need it, ask whoever shared the link with you, or raise a request.',
     securedMessage       : 'I am trying to open {url}, but it is restricted and I cannot see it. Could you add me ({mail}) to its "{field}" field? That opens this one issue to me and nothing else. Thank you.',
+    securedMessageFieldUnnamed : 'I am trying to open {url}, but it is restricted and I cannot see it. Could you add me ({mail}) to the field on the issue that lets one more person see it? That opens this one issue to me and nothing else. Thank you.',
     securedOpenAgain     : 'Added already? Open {key}',
     securedEscalateField : 'Nobody to ask? Raise a request',
     securedEscalateNoField : 'Something else? Raise a request',
@@ -205,6 +244,13 @@ def CASES = [
   [name: 'secured nobody / agent', page: 'agent', payload: [mode: 'secured',
       issueKey: 'DEMO-102', issueUrl: '/browse/DEMO-102', levelName: 'Project team only',
       fieldName: 'Can also see', people: [], myMail: 'you@example.com', fallbackUrl: FALLBACK]],
+  [name: 'secured field unnamed (DISCLOSURE fieldName false), one person / browse', page: 'browse', payload: [mode: 'secured',
+      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', levelName: '',
+      fieldName: null, hasField: true, people: [[name: 'Jane Doe', role: 'reporter']],
+      myMail: 'you@example.com', fallbackUrl: FALLBACK]],
+  [name: 'secured minimal disclosure (no level, no field name, nobody) / browse', page: 'browse', payload: [mode: 'secured',
+      issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', levelName: '',
+      fieldName: null, hasField: true, people: [], myMail: 'you@example.com', fallbackUrl: FALLBACK]],
   [name: 'secured no field / browse', page: 'browse', payload: [mode: 'secured',
       issueKey: 'OPS-318', issueUrl: '/browse/OPS-318', levelName: 'Management only',
       fieldName: null, people: [], myMail: 'you@example.com', fallbackUrl: FALLBACK]],
@@ -225,8 +271,13 @@ CASES.each { c ->
     def writer = new StringWriter()
 // >>> COPY RENDER
 // >>> RENDER -- build/sync_tests.py copies this block verbatim into
-//               tests/render_test.groovy. The client script written below
-//               must stay free of comments.
+//               tests/render_test.groovy. The client script inside must
+//               stay free of comments.
+// render/render.groovy -- payload -> inline client script. Always built in,
+// the RENDER section. build/assemble.py replaces the @@CLIENT@@ line with
+// render/client.js, full-line comments removed, and then runs
+// build/strip_client_comments.py --check on the result.
+
 if (payload) {
     payload.page = pageKind        // 'browse' | 'agent' -- picks the host node
                                    // and the wording of the card
@@ -243,23 +294,8 @@ if (payload) {
     // Client script. Inside the dollar-slashy string below, a dollar sign
     // followed by a name interpolates and dollar-slash is an escaped slash,
     // so the block holds exactly two interpolations (dataJson, textJson) and
-    // no other dollar sign. How it works, since it carries no comments:
-    //  - runs once per page (window flag); d = payload, T = TEXT, fmt() fills
-    //    {placeholders} in a single pass, so server values are never re-read
-    //    as templates;
-    //  - greets by first name only when the first word needed no cleaning,
-    //    has 3+ Latin letters (U+00C0 to U+024F, Latin-1 and Latin Extended
-    //    A/B, included) and is not all caps; otherwise a plain greeting. The
-    //    range is written as JavaScript escapes so the file stays ASCII and
-    //    survives any editor or code page;
-    //  - the DOM is the gate: it draws only into .issue-error (/browse/) or
-    //    #unlicensed-project-type (agent view), hiding the stock children. On
-    //    a page that renders normally neither node exists, so no card can
-    //    appear there. The agent view is client-rendered, so it polls for
-    //    about 10 s and watches DOM mutations for 15 s;
-    //  - focus rings use box-shadow because Jira's global CSS removes
-    //    outlines; the copy button falls back to execCommand and then to
-    //    "copy it from the box above".
+    // no other dollar sign. It carries no comments: what it does is explained
+    // at the top of render/client.js and in docs/DESIGN.md.
     writer.write($/
 <script>
 (function () {
@@ -393,11 +429,15 @@ if (payload) {
     return d.levelName ? fmt(T.levelNamed, { level: d.levelName }) : T.levelUnnamed;
   }
 
+  function hasField() {
+    return !!(d.fieldName || d.hasField);
+  }
+
   function securedLead() {
     var n = (d.people || []).length;
     var s = fmt(T.securedLead, { key: d.issueKey, levelPhrase: levelPhrase() });
-    if (d.fieldName) {
-      s += ' ' + fmt(T.securedLeadField, { field: d.fieldName });
+    if (hasField()) {
+      s += ' ' + (d.fieldName ? fmt(T.securedLeadField, { field: d.fieldName }) : T.securedLeadFieldUnnamed);
       if (n > 1) {
         s += ' ' + T.securedLeadMany;
       } else if (n === 1) {
@@ -416,8 +456,10 @@ if (payload) {
 
   function securedMessage() {
     var ppl = d.people || [];
-    return (ppl.length === 1 ? greetingFor(ppl[0].name) : T.greetingPlain) + ' '
-         + fmt(T.securedMessage, { url: origin() + d.issueUrl, mail: d.myMail, field: d.fieldName });
+    var body = d.fieldName
+      ? fmt(T.securedMessage, { url: origin() + d.issueUrl, mail: d.myMail, field: d.fieldName })
+      : fmt(T.securedMessageFieldUnnamed, { url: origin() + d.issueUrl, mail: d.myMail });
+    return (ppl.length === 1 ? greetingFor(ppl[0].name) : T.greetingPlain) + ' ' + body;
   }
 
   function copyText(text, btn) {
@@ -561,7 +603,7 @@ if (payload) {
         box.appendChild(row);
       }
 
-      if (d.fieldName) {
+      if (hasField()) {
         var sq = el('div', 'jbh-quote');
         sq.appendChild(el('b', null, ppl.length ? T.messageHeadingThem : T.messageHeading));
         sq.appendChild(document.createTextNode(securedMessage()));
@@ -581,7 +623,7 @@ if (payload) {
       }
 
       var sEsc = el('a', 'jbh-link',
-        d.fieldName ? T.securedEscalateField : T.securedEscalateNoField);
+        hasField() ? T.securedEscalateField : T.securedEscalateNoField);
       sEsc.href = d.fallbackUrl;
       actions.appendChild(sEsc);
 

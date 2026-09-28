@@ -2,6 +2,36 @@
 
 All notable changes to this project are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-09-28
+
+Modular source, five ready-made profiles, disclosure switches, and a compatibility pass. With the `full` profile and the same CONFIG values, every viewer sees the same card as in 1.0.0.
+
+### Added
+
+- Modular source under `src/`: `config/` (values and texts), `core/` (context, decide, entry), `policy/` (internal-mail-domain, internal-group, people-reporter-assignee, jsm), `modes/` (portal, share, moved, secured, a `_template`), `render/` (render.groovy, client.js). Every module declares `provides` and `requires`; a closure only sees what is declared above it, and the assembler keeps that order.
+- `build/assemble.py` joins a profile into one deployable file. Five profiles, assembled and committed in `dist/`: `full`, `jsm-only`, `no-jsm`, `secured-minimal`, `group-policy`. `docs/RECIPES.md` says which one fits which situation; `docs/EXTENDING.md` says how to add a mode or a policy.
+- `DISCLOSURE` and `DISCLOSURE_BY_LEVEL`: the restricted card can now withhold the level's name, the field's name, or the people, globally or per level. The gates still run; these only trim what passes them. Two texts for the case where the field exists but is not named: `securedLeadFieldUnnamed`, `securedMessageFieldUnnamed`; the payload carries `hasField`.
+- `ESCALATION_BY_PROJECT`: a "raise a request" target per project key for the portal, share, moved and secured cards. The generic card keeps `FALLBACK_URL` on purpose, so a hidden issue and a missing key still get the same card.
+- `MODE_ORDER` and `PAGES`: which modes are tried, in which order, and on which pages.
+- `SECURED_FIELD_PREFERENCE`: which multi-user field to suggest when a level grants access through several.
+- `policy/internal-group`: "internal" defined by group membership (`INTERNAL_GROUPS`) for directories where usernames are not e-mail addresses.
+- `docs/COMPATIBILITY.md`: every Jira and Service Management API the fragment calls, checked against the Javadoc of Jira Data Center 8.0.0 to 11.3.4 and Service Management 4.0.0 to 11.3.4, the ScriptRunner pairing per Jira major, and what is confirmed only by the author's instance.
+- `CONTRIBUTING.md`, issue templates, and a GitHub Actions check (assemble, client-comment check, test sync).
+
+### Changed
+
+- `GlobalPermissionKey.USE`, deprecated since Jira 7.0, is no longer used. The "has application access" gate of the share, moved and secured cards is `ApplicationRoleManager.hasAnyRole(user)`, present unchanged from Jira 8.0 to 11.x. Run the decision test's T08, T09, X01 and X02 after upgrading.
+- The Service Management callable is built with Groovy's `asType` instead of a bare `java.lang.reflect.Proxy`, so the proxy answers `equals`, `hashCode` and `toString` properly.
+- `getUsersSecurityLevels`, documented as "can be null", is guarded; the permission scheme lookup is null-checked.
+- Permission keys use the `ProjectPermissions` constants instead of string literals.
+- The request object stays untyped, so the fragment runs unchanged on Jira 11, where `ExecutingHttpRequest.get()` returns a `jakarta.servlet` request.
+- Documentation: the fragment type is called "Show a web panel" in ScriptRunner's documentation, not "Custom web panel"; the requirements now state the Javadoc-verified range and the ScriptRunner pairing instead of "Jira 9.x, ScriptRunner 8.x (assumed)".
+- `build/sync_tests.py` reads `dist/full.groovy` by default; `tests/render_test.groovy` gained a case for a hidden field name.
+
+### Removed
+
+- `src/browse-error-helper.groovy`. Its assembled equivalent is `dist/full.groovy`.
+
 ## [1.0.0] - 2026-09-26
 
 First public release. Functionally identical to internal version 7.4 (2026-09-24).

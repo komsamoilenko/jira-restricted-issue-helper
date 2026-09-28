@@ -1,9 +1,9 @@
 # Local notes, never committed
 NOTES-local.md
 
-# Configured copies of the fragment and build output
+# Configured copies of the fragment (your CONFIG values) and scratch builds
 *.local.groovy
-dist/
+dist/.*.checking.groovy
 
 # Tooling
 __pycache__/
