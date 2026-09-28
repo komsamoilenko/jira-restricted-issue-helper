@@ -64,6 +64,10 @@ Six profiles are assembled and committed in [dist/](dist/). Each is one file, re
 | `group-policy` | directories whose usernames are logins rather than e-mail addresses | the same as `full`, with "internal" defined by membership of `INTERNAL_GROUPS` |
 | `exists-only` | instances that want to say nothing about a restricted issue, but let staff tell "restricted" from "deleted" | two cards only: `restricted` (the issue exists and you may not view it) and `missing` (no issue has this key), for internal viewers with application access; everyone else keeps the generic card |
 
+| `secured-minimal` | `exists-only` |
+|---|---|
+| ![The restricted card with no level name, no field name and no people](docs/img/06-minimal-vs-exists-only.png) | (same image, right panel: "this issue exists and you do not have permission to view it") |
+
 [docs/RECIPES.md](docs/RECIPES.md) starts from a situation and says which profile to take and which values to change.
 
 ## Assemble your own
