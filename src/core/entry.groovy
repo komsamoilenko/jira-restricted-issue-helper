@@ -13,16 +13,22 @@ import com.atlassian.jira.web.ExecutingHttpRequest
 // Jira serves lowercase keys and a moved issue still answers on its old key.
 // A Jira served under a context path (for example /jira) reports URIs that
 // start with it: it is stripped before matching, and prefixLinks() puts it
-// back on every root-relative link the card carries.
+// back on every root-relative link the card carries. A URI outside the
+// context path is not addressed to this Jira and names no page.
 def route = { String rawUri, String cp ->
     String uri = rawUri ?: ''
     String ctxPath = cp ?: ''
-    if (ctxPath && (uri == ctxPath || uri.startsWith(ctxPath + '/'))) {
-        uri = uri.substring(ctxPath.length())
+    if (ctxPath) {
+        if (uri == ctxPath || uri.startsWith(ctxPath + '/')) {
+            uri = uri.substring(ctxPath.length())
+        } else {
+            return [pageKind: null, key: null]
+        }
     }
-    // Each matcher is asked exactly once: a Matcher in boolean context calls
-    // find(), and a second find() on the same matcher continues after the
-    // first match instead of starting over, so it would say "no match".
+    // Each matcher is asked once with find() and read with group(1), so the
+    // result does not depend on how Groovy coerces a Matcher to boolean.
+    // (1.0.0 coerced the same matcher twice; measured correct on Groovy 4.0.8,
+    // so that was a readability and testability change, not a fix.)
     String kind = null
     String key  = null
     def mBrowse = (uri =~ '(?i)^/browse/([a-z][a-z0-9_]*-[0-9]+)')
@@ -44,13 +50,17 @@ def route = { String rawUri, String cp ->
 
 // Puts the context path in front of every root-relative link of a payload.
 // Protocol-relative links (//host/...) and links that already carry the
-// prefix are left alone.
+// prefix, or equal it, are left alone. CharSequence, not String, so a
+// GString written in CONFIG is treated like any other text.
 def prefixLinks = { Map p, String cp ->
     if (p == null || !cp) { return p }
     ['issueUrl', 'portalUrl', 'helpCenter', 'fallbackUrl', 'myRequests'].each { k ->
         def v = p[k]
-        if (v instanceof String && v.startsWith('/') && !v.startsWith('//') && !v.startsWith(cp + '/')) {
-            p[k] = cp + v
+        if (v instanceof CharSequence) {
+            String s = v.toString()
+            if (s.startsWith('/') && !s.startsWith('//') && s != cp && !s.startsWith(cp + '/')) {
+                p[k] = cp + s
+            }
         }
     }
     return p

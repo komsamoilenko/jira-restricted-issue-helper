@@ -40,9 +40,9 @@ The `share` and `moved` cards are gated on application access alone, not on the 
 
 ## Application access
 
-`hasAppAccess(user)` is `ApplicationRoleManager.hasAnyRole(user)`: true for an account that holds any application role (Jira Software, Jira Core, a Service Management agent seat), false for portal-only customers and for anonymous. It is the "not a portal-only customer" gate of the `share`, `moved` and `secured` cards, so a customer who only uses the portal is never told that an issue they cannot open exists.
+`hasAppAccess(user)` is `user.isActive() && ApplicationRoleManager.hasAnyRole(user)`: true for an active account that holds any application role (Jira Software, Jira Core, a Service Management agent seat), false for portal-only customers, deactivated accounts and anonymous. It is the "not a portal-only customer" gate of the `share`, `moved` and `secured` cards, so a customer who only uses the portal is never told that an issue they cannot open exists.
 
-1.0.0 asked `GlobalPermissionKey.USE` for the same thing. That key has been deprecated since Jira 7.0, and `ApplicationRoleManager.hasAnyRole` is present with the same signature from Jira 8.0 to 11.x. The two are meant to agree; the decision test's T08, T09, X01 and X02 cases exercise the gate on your accounts.
+1.0.0 asked `GlobalPermissionKey.USE` for the same thing. That key is marked `@Deprecated` ("Use ApplicationAuthorizationService instead. Since v7.0") in every Javadoc from Jira 8.0 to 11.x; 1.1.0 uses `ApplicationRoleManager.hasAnyRole`, present with the same signature over the same range. `hasAnyRole` alone does not look at the account's status: on one instance it answered true for 296 deactivated accounts where `USE` answered false, which is why `isActive()` stands in front of it; with it, the two agreed for all 2 676 accounts there. The decision test's X08 to X13 make this gate the deciding one on your accounts (an internal viewer without application access, and a deactivated internal account with one, against a restricted issue, a shareable request and a moved issue), with preconditions that prove no other gate stopped the card.
 
 ## The two escalation links
 
@@ -145,7 +145,7 @@ The script sent to the browser is deliberately small and comment-free. Its sourc
 
 Each of these keeps the fragment on documented, stable ground where it can, and makes the failure safe where it cannot. [COMPATIBILITY.md](COMPATIBILITY.md) has the version-by-version detail and the sources.
 
-- **Application access** is `ApplicationRoleManager.hasAnyRole`, not the deprecated `GlobalPermissionKey.USE` (see above).
+- **Application access** is `isActive()` plus `ApplicationRoleManager.hasAnyRole`, not the deprecated `GlobalPermissionKey.USE` (see above).
 - **`getUsersSecurityLevels`** is documented as possibly returning null; `passesSecurity` treats null as "no levels".
 - **`getSchemeFor`** may return null; the field route of gate 8 checks it and fails the gate.
 - **`PermissionSchemeManager.hasSchemePermission`** is the one `@Internal` API the restricted card depends on. It is kept, in one call inside the `secured` mode; if it fails, the mode gives no answer and the viewer gets the generic card.

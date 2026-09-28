@@ -23,12 +23,13 @@ def mailOf = { u ->
 // seat), false for portal-only customers, deactivated accounts and anonymous.
 // This is the "is not a portal-only customer" gate of the share, moved and
 // secured cards. 1.0.0 asked GlobalPermissionKey.USE for the same thing; that
-// key has been deprecated since Jira 7.0, and ApplicationRoleManager.hasAnyRole
-// is its documented successor (present unchanged from Jira 8.0 to 11.x).
-// hasAnyRole does not look at the account's status: a deactivated account
-// that is still in a licensed group answers true, where USE answered false
-// (measured on 2 676 accounts, 296 of them deactivated with a role). The
-// isActive() check restores the exact 1.0.0 behaviour.
+// key is marked @Deprecated ("Use ApplicationAuthorizationService instead.
+// Since v7.0") in every Javadoc from 8.0 to 11.x. 1.1.0 uses
+// ApplicationRoleManager.hasAnyRole instead, present unchanged over the same
+// range. hasAnyRole does not look at the account's status: a deactivated
+// account that is still in a licensed group answers true, where USE answered
+// false (measured on 2 676 accounts, 296 of them deactivated with a role).
+// With isActive() in front, the two agreed for every account.
 def hasAppAccess = { u ->
     u != null && u.isActive() && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
 }

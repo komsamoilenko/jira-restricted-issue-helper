@@ -23,7 +23,7 @@ Test ids refer to [tests/decision_test.groovy](../tests/decision_test.groovy): T
 
 1. Copy `dist/<profile>.groovy` to a private file. A name ending in `.local.groovy` keeps it out of git.
 2. Replace the placeholders in its CONFIG block. Until you do, the restricted card never fires and "Raise a request" points at a request type that does not exist.
-3. Refresh the tests from your copy, `python build/sync_tests.py --source <your file>`, replace the synthetic accounts and keys in `CASES` with real ones that match each scenario, and run the three tests in the Script Console. Run `render_test` first: it needs no data and shows compilation errors.
+3. Refresh the tests from your copy, `python build/sync_tests.py --source <your file>`, replace the synthetic accounts and keys in `CASES` with real ones that match each scenario, and run the four tests in the Script Console. Run `render_test` and `route_test` first: they need no data, and a compilation error shows up there.
 
 A profile can also be changed and rebuilt instead of editing a copy: add `NAME = value` or `TEXT.key = 'value'` lines to it and run `python build/assemble.py --profile <name>`. [EXTENDING.md](EXTENDING.md) explains the profile syntax.
 

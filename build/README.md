@@ -90,6 +90,6 @@ python build/strip_client_comments.py <your file> --check
 python build/sync_tests.py --source <your file>
 ```
 
-Then run the three tests in the Script Console, deploy, and compare the saved fragment body with your file.
+Then run the four tests in the Script Console, deploy, and compare the saved fragment body with your file.
 
 For a CI pipeline on the repository itself, the three checks that need no Jira are `python build/assemble.py --all --check`, `python build/strip_client_comments.py dist/<profile>.groovy --check` for each profile, and `python build/sync_tests.py --check`.

@@ -235,12 +235,13 @@ def mailOf = { u ->
 // seat), false for portal-only customers, deactivated accounts and anonymous.
 // This is the "is not a portal-only customer" gate of the share, moved and
 // secured cards. 1.0.0 asked GlobalPermissionKey.USE for the same thing; that
-// key has been deprecated since Jira 7.0, and ApplicationRoleManager.hasAnyRole
-// is its documented successor (present unchanged from Jira 8.0 to 11.x).
-// hasAnyRole does not look at the account's status: a deactivated account
-// that is still in a licensed group answers true, where USE answered false
-// (measured on 2 676 accounts, 296 of them deactivated with a role). The
-// isActive() check restores the exact 1.0.0 behaviour.
+// key is marked @Deprecated ("Use ApplicationAuthorizationService instead.
+// Since v7.0") in every Javadoc from 8.0 to 11.x. 1.1.0 uses
+// ApplicationRoleManager.hasAnyRole instead, present unchanged over the same
+// range. hasAnyRole does not look at the account's status: a deactivated
+// account that is still in a licensed group answers true, where USE answered
+// false (measured on 2 676 accounts, 296 of them deactivated with a role).
+// With isActive() in front, the two agreed for every account.
 def hasAppAccess = { u ->
     u != null && u.isActive() && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
 }
@@ -692,15 +693,19 @@ def decide = { user, issue, String key, String pageKind ->
 // <<< DECIDE
 // <<< COPY DECIDE
 
+// Same accounts and keys as tests/decision_test.groovy. needsLevel proves the
+// issue still carries a level, so generic really comes from the kill switch.
 def CASES = [
   [name: 'F01 SECURED_CARD=false: restricted issue with field and helpers -> generic',
-   user: 'alice@example.com', key: 'DEMO-101', page: 'browse', expect: [mode: 'generic']],
+   user: 'alice@example.com', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
   [name: 'F02 SECURED_CARD=false: restricted issue without a field -> generic',
-   user: 'alice@example.com', key: 'DEMO-103', page: 'browse', expect: [mode: 'generic']],
+   user: 'alice@example.com', key: 'DEMO-103', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
   [name: 'F03 SECURED_CARD=false: portal request, agent page -> portal, unchanged',
    user: 'alice@example.com', key: 'HELP-201', page: 'agent', expect: [mode: 'portal']],
   [name: 'F04 SECURED_CARD=false: request on a restricted level -> generic',
-   user: 'alice@example.com', key: 'HELP-203', page: 'browse', expect: [mode: 'generic']],
+   user: 'alice@example.com', key: 'HELP-203', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
+  [name: 'F05 SECURED_CARD=false: the reporter, who can see the issue -> no card, unchanged',
+   user: 'bob@example.com', key: 'DEMO-101', page: 'browse', expect: null],
 ]
 
 def um = ComponentAccessor.getUserManager()
@@ -716,11 +721,20 @@ CASES.each { c ->
         return
     }
     def issue = im.getIssueObject(c.key)
-    if (issue == null) {
-        // A key that does not resolve gives the generic card for every
-        // viewer, which would make every case here pass for the wrong reason.
+    if (!c.containsKey('expect') || (c.expect instanceof Map && !c.expect.mode)) {
+        fail++
+        out.append('FAIL ' + c.name + '  [the case has no expect, or an expect without mode]\n')
+        return
+    }
+    // A key that does not resolve gives the generic card for every viewer,
+    // which would make every case here pass for the wrong reason; so would
+    // an issue that lost its level.
+    def whys = []
+    if (issue == null) { whys << ('no such issue: ' + c.key) }
+    else if (c.needsLevel && issue.getSecurityLevelId() == null) { whys << (c.key + ' has no security level') }
+    if (whys) {
         skip++
-        out.append('SKIP ' + c.name + '  [no such issue: ' + c.key + ']\n')
+        out.append('SKIP ' + c.name + '  [' + whys.join('; ') + ']\n')
         return
     }
     String key = issue.getKey()
@@ -735,6 +749,8 @@ CASES.each { c ->
     def problems = []
     if (err != null) {
         problems << ('threw ' + err)
+    } else if (c.expect == null) {
+        if (got != null) { problems << ('expected no card, got ' + got) }
     } else if (!(got instanceof Map)) {
         problems << ('expected a card, got ' + got)
     } else {

@@ -243,12 +243,13 @@ def mailOf = { u ->
 // seat), false for portal-only customers, deactivated accounts and anonymous.
 // This is the "is not a portal-only customer" gate of the share, moved and
 // secured cards. 1.0.0 asked GlobalPermissionKey.USE for the same thing; that
-// key has been deprecated since Jira 7.0, and ApplicationRoleManager.hasAnyRole
-// is its documented successor (present unchanged from Jira 8.0 to 11.x).
-// hasAnyRole does not look at the account's status: a deactivated account
-// that is still in a licensed group answers true, where USE answered false
-// (measured on 2 676 accounts, 296 of them deactivated with a role). The
-// isActive() check restores the exact 1.0.0 behaviour.
+// key is marked @Deprecated ("Use ApplicationAuthorizationService instead.
+// Since v7.0") in every Javadoc from 8.0 to 11.x. 1.1.0 uses
+// ApplicationRoleManager.hasAnyRole instead, present unchanged over the same
+// range. hasAnyRole does not look at the account's status: a deactivated
+// account that is still in a licensed group answers true, where USE answered
+// false (measured on 2 676 accounts, 296 of them deactivated with a role).
+// With isActive() in front, the two agreed for every account.
 def hasAppAccess = { u ->
     u != null && u.isActive() && ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
 }
@@ -712,9 +713,15 @@ def decide = { user, issue, String key, String pageKind ->
 //  mailonly              username outside the policy, e-mail inside it
 //  dave@example.com      internal viewer already added to DEMO-101's field
 //  norole@example.com    internal by the policy, but WITHOUT application
-//                        access (in no licensed group)
+//                        access (in no licensed group); the permission scheme
+//                        would let her browse DEMO-101 with issue security
+//                        left out (so only the access gate stops the card)
 //  former@example.com    DEACTIVATED internal account still in a licensed
-//                        group (getUserByName returns inactive users too)
+//                        group (getUserByName returns inactive users too);
+//                        same permission-scheme situation as norole
+//  erin@example.com      internal viewer who IS on the level "Project team
+//                        only" of the HELP project, but is not a participant
+//                        of HELP-204 and HELP-205
 //
 //  DEMO-101  level "Project team only" (scheme in SECURED_SCHEMES), grants
 //            on the multi-user field "Can also see", which is on the edit
@@ -730,16 +737,29 @@ def decide = { user, issue, String key, String pageKind ->
 //  HELP-201  request alice can open on the portal (she is a participant)
 //  HELP-202  request alice is not on; its reporter can share it
 //  HELP-203  request on the level "Project team only"
+//  HELP-204  request on that level, erin not a participant, reporter bob
+//            (active, has a mail address) can share it
+//  HELP-205  request on that level, erin not a participant, reporter inactive
 //  NOPE-99999  does not exist (the only key that may be missing: every other
 //              case is SKIPPED, not passed, when its key does not resolve)
 //
 //  Case fields: user, key, page, then ONE of
-//   expect: [mode: ..., other keys]   every listed key must match
+//   expect: [mode: ..., other keys]   every listed key must match; mode is required
 //   expect: null                      no card at all
-//  and optional preconditions, checked before decide() and reported as SKIP
-//  when the data does not match the scenario: needsLevel (the issue carries a
-//  security level), needsNoLevel, needsArchived (its project is archived),
-//  needsInactive (the account is deactivated), missing (the key must not exist).
+//  (a case without expect FAILS: a typo must not pass) and optional
+//  preconditions, checked before decide() and reported as SKIP when the data
+//  does not match the scenario:
+//   needsLevel        the issue carries a security level
+//   needsArchived     its project is archived
+//   missing           the key must NOT resolve
+//   needsInactive     the account is deactivated
+//   needsInternal     the account passes the internal-viewer policy
+//   needsAppRole      the account holds an application role (hasAnyRole)
+//   needsNoAppRole    the account holds none
+//   needsSchemeBrowse the permission scheme, issue security left out, would
+//                     let the account browse the issue (hasSchemePermission)
+//  The last four exist so that a "-> generic" case proves that ONE gate
+//  stopped the card, not whichever came first.
 def TWO_PEOPLE = [[name: 'Bob Example', role: 'reporter'], [name: 'Carol Example', role: 'assignee']]
 
 def CASES = [
@@ -788,6 +808,11 @@ def CASES = [
    expect: [mode: 'generic', helpCenter: HELP_CENTER, fallbackUrl: FALLBACK_URL]],
   [name: 'T15 agent who can browse, agent page -> no card',
    user: 'agent@example.com', key: 'HELP-201', page: 'agent', expect: null],
+  [name: 'T16 viewer on the level of a restricted request, not a participant, reporter usable -> share, not secured',
+   user: 'erin@example.com', key: 'HELP-204', page: 'browse', needsLevel: true,
+   expect: [mode: 'share', issueKey: 'HELP-204', reporterName: 'Bob Example']],
+  [name: 'T17 same, reporter unusable -> generic',
+   user: 'erin@example.com', key: 'HELP-205', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
   // ---- the gates of the restricted card: each of these must stay generic ----
   [name: 'X01 external account holding application access x restricted issue -> generic',
    user: 'contractor@example.org', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
@@ -804,18 +829,32 @@ def CASES = [
    expect: [mode: 'generic']],
   [name: 'X07 viewer the permission scheme would not let in anyway -> generic',
    user: 'alice@example.com', key: 'CLOSED-7', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  // ---- the application-access gate on its own: internal by the policy, so
-  //      only hasAppAccess can stop the card. Each must stay generic. ----
+  // ---- the application-access gate on its own. The preconditions prove that
+  //      no other gate stops the card, so a generic answer comes from
+  //      hasAppAccess alone. Each must stay generic. ----
   [name: 'X08 internal viewer WITHOUT application access x restricted issue -> generic',
-   user: 'norole@example.com', key: 'DEMO-101', page: 'browse', needsLevel: true, expect: [mode: 'generic']],
-  [name: 'X09 deactivated internal account x restricted issue -> generic',
-   user: 'former@example.com', key: 'DEMO-101', page: 'browse', needsLevel: true, needsInactive: true,
+   user: 'norole@example.com', key: 'DEMO-101', page: 'browse',
+   needsLevel: true, needsInternal: true, needsNoAppRole: true, needsSchemeBrowse: true,
    expect: [mode: 'generic']],
-  [name: 'X10 deactivated internal account x request with a usable reporter -> generic, never share',
-   user: 'former@example.com', key: 'HELP-202', page: 'browse', needsInactive: true,
+  [name: 'X09 deactivated internal account with a role x restricted issue -> generic',
+   user: 'former@example.com', key: 'DEMO-101', page: 'browse',
+   needsLevel: true, needsInactive: true, needsInternal: true, needsAppRole: true, needsSchemeBrowse: true,
    expect: [mode: 'generic']],
-  [name: 'X11 deactivated internal account x issue moved out of a service desk -> generic, never moved',
-   user: 'former@example.com', key: 'DEMO-150', page: 'browse', needsInactive: true,
+  [name: 'X10 deactivated internal account with a role x request with a usable reporter -> generic, never share',
+   user: 'former@example.com', key: 'HELP-202', page: 'browse',
+   needsInactive: true, needsInternal: true, needsAppRole: true,
+   expect: [mode: 'generic']],
+  [name: 'X11 deactivated internal account with a role x issue moved out of a service desk -> generic, never moved',
+   user: 'former@example.com', key: 'DEMO-150', page: 'browse',
+   needsInactive: true, needsInternal: true, needsAppRole: true,
+   expect: [mode: 'generic']],
+  [name: 'X12 internal viewer WITHOUT application access x request with a usable reporter -> generic, never share',
+   user: 'norole@example.com', key: 'HELP-202', page: 'browse',
+   needsInternal: true, needsNoAppRole: true,
+   expect: [mode: 'generic']],
+  [name: 'X13 internal viewer WITHOUT application access x issue moved out of a service desk -> generic, never moved',
+   user: 'norole@example.com', key: 'DEMO-150', page: 'browse',
+   needsInternal: true, needsNoAppRole: true,
    expect: [mode: 'generic']],
   // ---- existence-only modes (built into the full profile, off in MODE_ORDER):
   //      called directly with the ctx decide() would build. `direct` names the
@@ -858,23 +897,40 @@ CASES.each { c ->
         return
     }
     def issue = im.getIssueObject(c.key)
+    // Every case must say what it expects, and an expected card must name
+    // its mode: a case that expects nothing in particular proves nothing.
+    if (!c.containsKey('expect') || (c.expect instanceof Map && !c.expect.mode)) {
+        fail++
+        out.append('FAIL ' + c.name + '  [the case has no expect, or an expect without mode]\n')
+        return
+    }
     // Preconditions: the data must match the scenario, or the case proves
     // nothing. A key that does not resolve gives the generic card for every
     // viewer, so it is a SKIP unless the case says the key must be missing.
-    String why = null
+    // Every unmet precondition is listed.
+    def whys = []
     if (c.missing) {
-        if (issue != null) { why = 'key exists, but the case needs a missing one: ' + c.key }
+        if (issue != null) { whys << ('key exists, but the case needs a missing one: ' + c.key) }
     } else if (issue == null) {
-        why = 'no such issue: ' + c.key
+        whys << ('no such issue: ' + c.key)
     } else {
-        if (c.needsLevel && issue.getSecurityLevelId() == null) { why = c.key + ' has no security level' }
-        if (c.needsNoLevel && issue.getSecurityLevelId() != null) { why = c.key + ' has a security level' }
-        if (c.needsArchived && !issue.getProjectObject()?.isArchived()) { why = c.key + ' is not in an archived project' }
+        if (c.needsLevel && issue.getSecurityLevelId() == null) { whys << (c.key + ' has no security level') }
+        if (c.needsArchived && !issue.getProjectObject()?.isArchived()) { whys << (c.key + ' is not in an archived project') }
+        if (c.needsSchemeBrowse && !ComponentAccessor.getPermissionSchemeManager()
+                .hasSchemePermission(ProjectPermissions.BROWSE_PROJECTS, issue, u, false)) {
+            whys << ('the permission scheme would not let ' + c.user + ' browse ' + c.key + ' even without issue security')
+        }
     }
-    if (c.needsInactive && u.isActive()) { why = c.user + ' is active, but the case needs a deactivated account' }
-    if (why != null) {
+    if (c.needsInactive && u.isActive()) { whys << (c.user + ' is active, but the case needs a deactivated account') }
+    if (c.needsInternal && !isInternal(u)) { whys << (c.user + ' does not pass the internal-viewer policy') }
+    if (c.needsAppRole || c.needsNoAppRole) {
+        boolean role = ComponentAccessor.getComponent(ApplicationRoleManager).hasAnyRole(u)
+        if (c.needsAppRole && !role) { whys << (c.user + ' holds no application role') }
+        if (c.needsNoAppRole && role) { whys << (c.user + ' holds an application role, but the case needs an account without one') }
+    }
+    if (whys) {
         skip++
-        out.append('SKIP ' + c.name + '  [' + why + ']\n')
+        out.append('SKIP ' + c.name + '  [' + whys.join('; ') + ']\n')
         return
     }
     String key = issue != null ? issue.getKey() : c.key

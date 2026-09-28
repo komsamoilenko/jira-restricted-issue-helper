@@ -14,8 +14,8 @@ There are two ways to get that file:
 
   | Jira Data Center | Jira Service Management | ScriptRunner (per Marketplace) | Groovy |
   |---|---|---|---|
-  | 8.x | 4.x | 6.x, 7.x or 8.x | 2.5.11 (6.x), 3.0.12 (7.x), 4.0.7 (8.x) |
-  | 9.x | 5.x | 8.x (7.x up to Jira 9.7.2) | 4.0.7 (8.x), 3.0.12 (7.x) |
+  | 8.x | 4.x | 6.x, 7.x or 8.x | 2.5.11 (6.x), 3.0.12 (7.x), 4.0.x (8.x) |
+  | 9.x | 5.x | 8.x (7.x up to Jira 9.7.2) | 4.0.x (8.x; 4.0.7 at 8.0.0, 4.0.8 measured on the author's instance), 3.0.12 (7.x) |
   | 10.x | 10.x | 9.x only | 4 |
   | 11.x | 11.x | 10.x only | 4 |
 
@@ -62,7 +62,7 @@ python build/strip_client_comments.py <your file> --check
 python build/sync_tests.py --source <your file>
 ```
 
-The first command must end with `CLEAN`. The second copies the sections of your file, your CONFIG values included, into the three tests. Then run the tests in the Script Console as described in [tests/README.md](../tests/README.md):
+The first command must end with `CLEAN`. The second copies the sections of your file, your CONFIG values included, into the four tests. Then run the tests in the Script Console as described in [tests/README.md](../tests/README.md):
 
 1. `tests/render_test.groovy` needs no data and shows every card variant as the browser receives it. `tests/route_test.groovy` needs no data either and must end with `RESULT OK`.
 2. `tests/decision_test.groovy` needs a few real accounts and issues that match its scenarios; replace the synthetic ones first, and adjust the expectations your profile changes.
@@ -108,7 +108,7 @@ In Jira, go to **Administration > ScriptRunner > Fragments** and create a new fr
 - **Carry your values over one by one**, into the new CONFIG block: `FALLBACK_URL`, `HELP_CENTER`, `MY_REQUESTS`, `RT_FIELD`, `MOVED_CARD`, `SECURED_CARD`, `BOT_NAMES`, `INTERNAL_MAIL_DOMAINS`, `INTERNAL_REQUIRE_USERNAME`, `SECURED_SCHEMES`, `SECURED_SKIP_LEVELS`, and any `TEXT` you reworded.
 - **Do not paste your 1.0.0 CONFIG block over the new one.** The block grew: `ESCALATION_BY_PROJECT`, `PAGES`, `MODE_ORDER`, `INTERNAL_GROUPS`, `DISCLOSURE`, `DISCLOSURE_BY_LEVEL` and `SECURED_FIELD_PREFERENCE` are new, and so are the texts `securedLeadFieldUnnamed` and `securedMessageFieldUnnamed`. The code that reads them would fail without them, and because every failure is caught, the fragment would fail quietly. Their defaults reproduce 1.0.0's behaviour; if you translated `TEXT`, translate the two new texts as well.
 - **If you changed code in 1.0.0**, it now lives in a module. A group-based `isInternal` is the `group-policy` profile; another policy is a module of its own ([EXTENDING.md](EXTENDING.md)). An `isInternal` check added to the `share` or `moved` card goes into `src/modes/share.groovy` or `src/modes/moved.groovy`, followed by a rebuild.
-- **Rerun the decision test's T08, T09, X01 and X02.** The "has application access" gate of the share, moved and secured cards changed from the deprecated `GlobalPermissionKey.USE` to `ApplicationRoleManager.hasAnyRole`. They are meant to agree; these four cases exercise the gate on your accounts.
+- **Rerun the decision test's X08 to X13.** The "has application access" gate of the share, moved and secured cards changed from the deprecated `GlobalPermissionKey.USE` to `isActive()` plus `ApplicationRoleManager.hasAnyRole`. Those six cases make the gate the deciding one on your accounts: an internal viewer without application access, and a deactivated internal account that still holds one, must get the generic card for a restricted issue, a shareable request and a moved issue. Their preconditions skip a case whose data would let another gate stop the card first.
 
 ## Rollback
 

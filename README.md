@@ -77,8 +77,8 @@ The source in [src/](src/) is split into modules: configuration and texts, the c
 
   | Jira Data Center | Jira Service Management | ScriptRunner (per Marketplace) | Groovy |
   |---|---|---|---|
-  | 8.x | 4.x | 6.x, 7.x or 8.x | 2.5.11 (6.x), 3.0.12 (7.x), 4.0.7 (8.x) |
-  | 9.x | 5.x | 8.x (7.x up to Jira 9.7.2) | 4.0.7 (8.x), 3.0.12 (7.x) |
+  | 8.x | 4.x | 6.x, 7.x or 8.x | 2.5.11 (6.x), 3.0.12 (7.x), 4.0.x (8.x) |
+  | 9.x | 5.x | 8.x (7.x up to Jira 9.7.2) | 4.0.x (8.x; 4.0.7 at 8.0.0, 4.0.8 measured on the author's instance), 3.0.12 (7.x) |
   | 10.x | 10.x | 9.x only | 4 |
   | 11.x | 11.x | 10.x only | 4 |
 

@@ -113,7 +113,7 @@ The pairing columns are vendor data, taken from the Marketplace version history 
 | Jira DC | Service Management | ScriptRunner majors per Marketplace | Latest ScriptRunner on 28 September 2026 | Groovy | This fragment |
 |---|---|---|---|---|---|
 | 8.x | 4.x | 5.x builds for Jira 8 (from 5.4.49-jira8); 6.x (up to Jira 9.2.1); 7.x (up to Jira 9.7.2); 8.x (from Jira 8.16 or 8.20) | 8.68.0, for Jira 8.20.0 to 9.17.5 | 2.4.15 (5.x), 2.5.11 (6.x), 3.0.12 (7.x), 4.0.7 (8.x) | not verified |
-| 9.x | 5.x | 8.x; 7.x up to Jira 9.7.2 | 8.68.0, for Jira 8.20.0 to 9.17.5 | 4.0.7 (8.x), 3.0.12 (7.x) | run in production by the author (ScriptRunner 8.x) |
+| 9.x | 5.x | 8.x; 7.x up to Jira 9.7.2 | 8.68.0, for Jira 8.20.0 to 9.17.5 | 4.0.x (8.x: 4.0.7 at 8.0.0 per Adaptavist, 4.0.8 measured on the author's instance on 28 September 2026), 3.0.12 (7.x) | run in production by the author (ScriptRunner 8.x, Groovy 4.0.8, Java 17) |
 | 10.x | 10.x | 9.x only; 9.1.1 is the first, and 10.7.4 needs 9.23.0 or later | 9.44.0, for Jira 10.0.0 to 10.7.4 | Groovy 4 | not verified |
 | 11.x | 11.x | 10.x only; 10.0.0 is the first | 10.18.0, for Jira 11.0.0 to 11.3.11 | Groovy 4 | not verified |
 
@@ -131,7 +131,7 @@ Sources:
 | 5.x | 2.4.15 | [release 6.x](https://docs.adaptavist.com/sr4js/latest/release-notes/release-6.x/): "upgraded from 2.4.15 to 2.5.11" | not verified |
 | 6.x | 2.5.11 | the same | not verified |
 | 7.x | 3.0.12 | [breaking changes](https://docs.adaptavist.com/sr4js/latest/release-notes/breaking-changes/): "Version 7.0.0+ Groovy was updated to 3.0.12" | not verified |
-| 8.x | 4.0.7 | the same: "Version 8.0.0+ Groovy was updated to 4.0.7" | run in production by the author |
+| 8.x | 4.0.7 at 8.0.0; later 8.x releases ship newer 4.0.x (4.0.8 measured on the author's instance) | the same: "Version 8.0.0+ Groovy was updated to 4.0.7" | run in production by the author (4.0.8) |
 | 9.x, 10.x | Groovy 4 | the same page lists no Groovy update after 8.0.0 | not verified |
 
 The [release notes for 8.x](https://docs.adaptavist.com/sr4js/latest/release-notes/release-8.x/) list five Groovy 4 breaking changes. None applies to the script:
@@ -159,7 +159,9 @@ The client's name tokenizer uses the character class `[^A-Za-z\u00C0-\u024F'-]`,
 
 If a Jira release removes a DOM hook, the script finds no node and draws nothing: the stock page stays.
 
-Jira served under a context path (for example `https://jira.example.com/jira`): handled since 1.1.0, not verified on such an instance. The entry point strips the context path (`request.getContextPath()`, present in both the javax and the jakarta servlet API) before matching the URL patterns, and puts it back on every root-relative link in the payload (`issueUrl`, `portalUrl`, `helpCenter`, `fallbackUrl`, `myRequests`). Write the CONFIG links without the context path. 1.0.0 rendered nothing under a context path.
+Jira served under a context path (for example `https://jira.example.com/jira`): handled since 1.1.0, not verified on such an instance. The entry point strips the context path (`request.getContextPath()`, present in both the javax and the jakarta servlet API) before matching the URL patterns, treats a URI outside it as no page at all, and puts the context path back on every root-relative link in the payload (`issueUrl`, `portalUrl`, `helpCenter`, `fallbackUrl`, `myRequests`). Write the CONFIG links without the context path. `tests/route_test.groovy` covers this with strings; that 1.0.0 would have rendered nothing under a context path follows from reading its code (its patterns expect `/browse/` at the start of the URI), not from a measurement.
+
+Groovy and the `Matcher` idiom of 1.0.0: 1.0.0 coerced the same `Matcher` to boolean twice, once for the page and once for the key. Measured on the author's instance (Groovy 4.0.8, Java 17): two boolean coercions of one matcher give `true, true`, two raw `find()` calls give `true, false`, and the 1.0.0 idiom on `/browse/ABC-1` gives `pageKind=browse, key=ABC-1`. 1.1.0's `route()` calls `find()` once and reads `group(1)`, so it does not depend on the coercion either way. Evidence: measured on one instance; the mechanism behind the coercion was not examined.
 
 ## Browsers
 

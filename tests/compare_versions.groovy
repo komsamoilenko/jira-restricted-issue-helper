@@ -22,7 +22,23 @@
 // ============================================================================
 import com.atlassian.jira.component.ComponentAccessor
 import groovy.json.JsonOutput
-// ---- add the import lines of BOTH versions here ----
+// ---- the imports of 1.0.0 (the OLD side when comparing against it) ----
+import com.atlassian.application.api.ApplicationKey
+import com.atlassian.jira.application.ApplicationAuthorizationService
+import com.atlassian.jira.issue.operation.IssueOperations
+import com.atlassian.jira.issue.security.IssueSecurityLevelManager
+import com.atlassian.jira.issue.security.IssueSecuritySchemeManager
+import com.atlassian.jira.permission.GlobalPermissionKey
+import com.atlassian.jira.security.plugin.ProjectPermissionKey
+import com.atlassian.jira.web.ExecutingHttpRequest
+import java.lang.reflect.InvocationHandler
+import java.lang.reflect.Proxy
+// ---- the imports of 1.1.0 (the NEW side); add any others your versions need ----
+import com.atlassian.jira.application.ApplicationRoleManager
+import com.atlassian.jira.permission.ProjectPermissions
+// Note: the MODE_ERRORS test hook of 1.1.0 is declared inside DECIDE, which
+// sits inside a closure here, so it is out of reach: a mode that throws shows
+// up only as a difference between a card and the generic card.
 
 def V_OLD = { ->
     // ---- paste OLD: // >>> CONFIG ... // <<< CONFIG, then // >>> DECIDE ... // <<< DECIDE ----
@@ -39,7 +55,7 @@ def IGNORE = ['hasField'] as Set
 
 def USERS = ['alice@example.com', 'customer@example.org', 'contractor@example.org']
 def KEYS  = ['DEMO-101', 'DEMO-150', 'HELP-201', 'HELP-202', 'HELP-203', 'NOPE-99999']
-def PAGES = ['browse', 'agent']
+def PAGE_KINDS = ['browse', 'agent']      // not PAGES: that name belongs to CONFIG inside the closures
 
 def um = ComponentAccessor.getUserManager()
 def im = ComponentAccessor.getIssueManager()
@@ -52,7 +68,7 @@ USERS.each { name ->
     KEYS.each { k ->
         def issue = im.getIssueObject(k)
         String key = issue != null ? issue.getKey() : k
-        PAGES.each { page ->
+        PAGE_KINDS.each { page ->
             def a = null, b = null
             String ea = null, eb = null
             try { a = V_OLD(u, issue, key, page) } catch (Throwable t) { ea = t.toString() }
