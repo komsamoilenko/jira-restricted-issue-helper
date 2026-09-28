@@ -10,6 +10,7 @@ Test ids refer to [tests/decision_test.groovy](../tests/decision_test.groovy): T
 | Jira Software or Jira Core, no Service Management | `no-jsm` | [Without Service Management](#jira-software-or-jira-core-without-service-management) |
 | Service Management, no issue security | `jsm-only` | [Without issue security](#service-management-without-issue-security) |
 | The card must not name people or the level | `secured-minimal`, or `DISCLOSURE` per level | [Say less](#say-less-no-people-no-level-name) |
+| The card must say nothing at all about a restricted issue, but staff should tell "restricted" from "deleted" | `exists-only` | [Existence only](#existence-only-restricted-or-deleted-nothing-more) |
 | Usernames are logins, not e-mail addresses | `group-policy` | [Usernames](#usernames-that-are-not-e-mail-addresses) |
 | A different service desk per department | any, with `ESCALATION_BY_PROJECT` | [A service desk per department](#a-service-desk-per-department) |
 | A level grants access through several fields | any with the restricted card | [Several fields](#several-fields-on-one-level) |
@@ -101,6 +102,20 @@ Level ids take the `L` suffix. A key missing from a `DISCLOSURE` map counts as o
 **The viewer sees**, with everything off: that the issue is protected by a security level, that it has a field for letting one more person in, that being added opens this one issue and nothing else, that anyone who can edit the issue can add them, and a copy-ready message to send to whoever shared the link. The message asks for "the field on the issue that lets one more person see it". With only `people` off, the card keeps the level and the field and says to send the message to whoever shared the link. A withheld value is never computed into the payload, so it is not in the page source either.
 
 **Test:** in the render test, read "secured nobody", "secured field unnamed (DISCLOSURE fieldName false), one person" and "secured no field, unnamed level / agent". In the decision test, for `secured-minimal`, change the expectations of T01, T02, T05 and T07 to `levelName: ''`, `fieldName: null`, `people: []`, and add `hasField: true` where a field exists. For a per-level setting, add a case on an issue at that level. X01 to X07 do not change: `DISCLOSURE` does not touch the gates.
+
+## Existence only: restricted or deleted, nothing more
+
+For an instance that does not want the card to share anything about a restricted issue, and still wants staff to know whether the key they were sent exists.
+
+**Profile:** `exists-only`. It builds the mail-domain policy and two modes: `restricted` (the issue exists and you may not view it) and `missing` (no issue has this key). No Service Management cards, no `secured` card, no names of any kind.
+
+**CONFIG to set:** `INTERNAL_MAIL_DOMAINS` and `INTERNAL_REQUIRE_USERNAME` (who counts as staff), `FALLBACK_URL` and `HELP_CENTER` (where the two buttons lead). `RESTRICTED_SCOPE` is `'all'` in this profile: every issue hidden by a security level is confirmed to exist. Set it to `'in-scope'` and list your schemes and skip levels if some compartments must stay indistinguishable from missing keys, or to `'any-issue'` if a viewer without Browse on the project should also be told the issue exists.
+
+**What the viewer sees:** a lock, "This issue is restricted", "{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request.", a "Raise a request" button and a "Got access? Open {key}" link. For a key that resolves to nothing: "No issue with this key", "There is no issue {key}. It may have been deleted, or the key may be mistyped.", the Help Center button. Everyone outside the audience, portal-only customers included, keeps the generic card.
+
+**The trade-off:** the audience can tell which keys exist, including by trying keys. Choose this for staff, never for customers. If you would rather show the detailed card where it is safe and only the fact elsewhere, start from `full` instead and set `MODE_ORDER = ['portal', 'share', 'moved', 'secured', 'restricted']`: `restricted` and `missing` are built into `full` and only need to be listed.
+
+**What to test:** E01 to E08 in `tests/decision_test.groovy` call the two modes directly, whichever `MODE_ORDER` says (E03 assumes `RESTRICTED_SCOPE = 'in-scope'`; with `'all'` expect `restricted` there). `tests/render_test.groovy` renders both cards.
 
 ## Usernames that are not e-mail addresses
 

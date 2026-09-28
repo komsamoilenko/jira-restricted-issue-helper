@@ -62,6 +62,7 @@ Five profiles are assembled and committed in [dist/](dist/). Each is one file, r
 | `no-jsm` | Jira Software or Jira Core without Service Management | `secured` and `generic`; the links and texts stop mentioning the Help Center and requests, "raise a request" leads to the stock Contact Administrators form (which must be switched on), and the generic card's button to the dashboard |
 | `secured-minimal` | organisations that want the restricted card but not its names | the same modules as `full`, with `DISCLOSURE` all off: no level name, no field name, no people |
 | `group-policy` | directories whose usernames are logins rather than e-mail addresses | the same as `full`, with "internal" defined by membership of `INTERNAL_GROUPS` |
+| `exists-only` | instances that want to say nothing about a restricted issue, but let staff tell "restricted" from "deleted" | two cards only: `restricted` (the issue exists and you may not view it) and `missing` (no issue has this key), for internal viewers with application access; everyone else keeps the generic card |
 
 [docs/RECIPES.md](docs/RECIPES.md) starts from a situation and says which profile to take and which values to change.
 

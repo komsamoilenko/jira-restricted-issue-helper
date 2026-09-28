@@ -15,6 +15,7 @@ Modular source, five ready-made profiles, disclosure switches, and a compatibili
 - `MODE_ORDER` and `PAGES`: which modes are tried, in which order, and on which pages.
 - `SECURED_FIELD_PREFERENCE`: which multi-user field to suggest when a level grants access through several.
 - `policy/internal-group`: "internal" defined by group membership (`INTERNAL_GROUPS`) for directories where usernames are not e-mail addresses.
+- Existence-only modes `restricted` ("this issue exists and you may not view it", nothing else) and `missing` ("no issue has this key"), for internal viewers with application access, off unless listed in `MODE_ORDER`; `RESTRICTED_SCOPE` (`in-scope`, `all`, `any-issue`); profile `exists-only`; texts `restrictedTitle`, `restrictedText`, `restrictedTextAgent`, `restrictedOpenAgain`, `missingTitle`, `missingText`. Asked for by a reader who wants no information on restricted issues shared, only "restricted" told apart from "deleted". They are the one deliberate exception to the rule that a hidden issue and a missing key look the same; `docs/DESIGN.md`, "Existence only", states the trade-off.
 - `docs/COMPATIBILITY.md`: every Jira and Service Management API the fragment calls, checked against the Javadoc of Jira Data Center 8.0.0 to 11.3.4 and Service Management 4.0.0 to 11.3.4, the ScriptRunner pairing per Jira major, and what is confirmed only by the author's instance.
 - `CONTRIBUTING.md`, issue templates, and a GitHub Actions check (assemble, client-comment check, test sync).
 

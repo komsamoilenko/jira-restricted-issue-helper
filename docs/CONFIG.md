@@ -66,9 +66,10 @@ Read by `policy/internal-group`:
 
 | Name | Type | Default | What it does |
 |---|---|---|---|
-| `SECURED_SCHEMES` | List of Long | `[12345L]` | Ids of the issue security schemes whose levels may get the restricted card. Levels of every other scheme keep the generic card. Find ids under **Administration > Issues > Issue security schemes** (the id is in the scheme's edit link). Keep the `L` suffix: scheme ids are compared as `Long`, and `[12345].contains(12345L)` is false in Groovy, which would silently switch the card off. |
-| `SECURED_SKIP_LEVELS` | List of Long | `[12346L, 12347L]` | Ids of levels inside those schemes that must never get the card, because their name or their members are what the level protects (compartments for people matters, for example). Also useful for catch-all levels whose name would confuse. Level ids are in the scheme's level configuration links. Keep the `L` suffix. |
+| `SECURED_SCHEMES` | List of Long | `[12345L]` | Ids of the issue security schemes whose levels may get the restricted card. Levels of every other scheme keep the generic card. Find ids under **Administration > Issues > Issue security schemes** (the id is in the scheme's edit link). Ids are compared as `Long` whether you write `12345` or `12345L` (1.0.0 needed the `L` suffix; it is still the clearest way to write an id). |
+| `SECURED_SKIP_LEVELS` | List of Long | `[12346L, 12347L]` | Ids of levels inside those schemes that must never get the card, because their name or their members are what the level protects (compartments for people matters, for example). Also useful for catch-all levels whose name would confuse. Level ids are in the scheme's level configuration links. Compared as `Long` either way. |
 | `SECURED_FIELD_PREFERENCE` | List | `[]` | Which field to suggest when a level grants access through several multi-user picker fields that all qualify. Field ids in order of preference, written as `'customfield_10100'` or as the number alone. The first listed field that qualifies wins; when none of them does, or the list is empty, the lowest field id wins. The list never makes a field qualify: it must still be a multi-user picker granted on the level, apply to the issue's context and be on the issue's edit screen. |
+| `RESTRICTED_SCOPE` | String | `'in-scope'` | Scope of the existence-only card (`restricted` mode, off unless listed in `MODE_ORDER`). `'in-scope'`: only levels of `SECURED_SCHEMES` minus `SECURED_SKIP_LEVELS`, so compartments whose existence is the secret stay indistinguishable from missing keys. `'all'`: every issue hidden by a security level. `'any-issue'`: every issue the viewer cannot browse, level or not. New in 1.1.0; see [DESIGN.md](DESIGN.md#existence-only). |
 
 A good way to choose the scope: put a scheme in scope only when most of its levels are team or project compartments whose names are not secret, and list the exceptions. Keep schemes that exist for one sensitive function out of scope entirely.
 
@@ -136,6 +137,12 @@ With Python, a profile can reword single entries (`TEXT.genericEscalate = '...'`
 | `securedOpenAgain` | Added already? Open {key} | restricted card link | `{key}` |
 | `securedEscalateField` | Nobody to ask? Raise a request | restricted card link, when there is a field | |
 | `securedEscalateNoField` | Something else? Raise a request | restricted card link, without a field | |
+| `restrictedTitle` | This issue is restricted | existence-only card title (`restricted` mode). New in 1.1.0 | |
+| `restrictedText` | {key} exists, but you do not have permission to view it, ... | existence-only card text on `/browse/`. New in 1.1.0 | `{key}` |
+| `restrictedTextAgent` | ... Once you have access, open it with the link below rather than from a queue ... | existence-only card text on the agent view. New in 1.1.0 | `{key}` |
+| `restrictedOpenAgain` | Got access? Open {key} | existence-only card link. New in 1.1.0 | `{key}` |
+| `missingTitle` | No issue with this key | `missing` card title. New in 1.1.0 | |
+| `missingText` | There is no issue {key}. It may have been deleted, or the key may be mistyped. ... | `missing` card text. New in 1.1.0 | `{key}` |
 | `genericTitle` | You can't view this issue | generic card title on `/browse/` | |
 | `genericTitleAgent` | This page is for service desk agents | generic card title on the agent view | |
 | `genericText` | It may have been deleted, or you may not have permission. ... | generic card text on `/browse/` | |
@@ -154,6 +161,7 @@ A profile overrides a value with a `NAME = value` line and a text with a `TEXT.k
 | `jsm-only` | `MODE_ORDER = ['portal', 'share', 'moved']` |
 | `no-jsm` | `MODE_ORDER = ['secured']`, `FALLBACK_URL = '/secure/ContactAdministrators!default.jspa'` (the Contact Administrators form must be switched on under **Administration > System > General configuration**), `HELP_CENTER = '/secure/Dashboard.jspa'`, and the six texts listed above |
 | `secured-minimal` | `DISCLOSURE = [levelName: false, fieldName: false, people: false]` |
+| `exists-only` | `MODE_ORDER = ['restricted', 'missing']`, `RESTRICTED_SCOPE = 'all'`; modules: the mail-domain policy and the two existence-only modes only |
 | `group-policy` | `INTERNAL_GROUPS = ['jira-staff']`, the same placeholder as the default |
 
 ## Fixed values in the code (not configuration)

@@ -98,3 +98,13 @@ final Map    DISCLOSURE_BY_LEVEL = [:]
 // are all on the edit screen, prefer these, in order (field ids such as
 // 'customfield_10100', or just the number). Empty = the lowest field id wins.
 final List   SECURED_FIELD_PREFERENCE = []
+
+// Scope of the existence-only card (modes/restricted; off unless 'restricted'
+// is in MODE_ORDER). It tells an internal viewer with application access that
+// the issue exists and is closed to them, and nothing else:
+//   'in-scope'  only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS, so
+//               issues in compartments whose existence is the secret stay
+//               indistinguishable from missing keys;
+//   'all'       every issue hidden by a security level;
+//   'any-issue' every issue the viewer cannot browse, level or not.
+final String RESTRICTED_SCOPE = 'in-scope'

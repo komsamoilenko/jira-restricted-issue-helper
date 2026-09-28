@@ -57,6 +57,14 @@ final Map    TEXT = [
     securedOpenAgain     : 'Added already? Open {key}',
     securedEscalateField : 'Nobody to ask? Raise a request',
     securedEscalateNoField : 'Something else? Raise a request',
+    // restricted (existence only; modes/restricted, off unless in MODE_ORDER)
+    restrictedTitle      : 'This issue is restricted',
+    restrictedText       : '{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request.',
+    restrictedTextAgent  : '{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request. Once you have access, open it with the link below rather than from a queue: queues also need an agent licence.',
+    restrictedOpenAgain  : 'Got access? Open {key}',
+    // missing (no issue with this key; modes/missing, off unless in MODE_ORDER)
+    missingTitle         : 'No issue with this key',
+    missingText          : 'There is no issue {key}. It may have been deleted, or the key may be mistyped. If you followed a link, ask whoever sent it.',
     // generic
     genericTitle         : "You can't view this issue",
     genericTitleAgent    : 'This page is for service desk agents',

@@ -34,6 +34,7 @@ On Jira 10.x and 11.x, confirm first that the location `atl.header.after.scripts
 | `no-jsm` | you run Jira Software or Jira Core without Service Management |
 | `secured-minimal` | you want the restricted card, but without the level's name, the field's name or the people |
 | `group-policy` | your usernames are logins rather than e-mail addresses, and a group equals staff |
+| `exists-only` | you want the card to say nothing about a restricted issue, only that it exists and is closed to the viewer, or that no issue has this key |
 
 [RECIPES.md](RECIPES.md) goes through more situations. If none fits, [EXTENDING.md](EXTENDING.md) explains how to assemble your own.
 

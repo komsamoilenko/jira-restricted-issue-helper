@@ -6,7 +6,7 @@ This fragment runs on every page of a Jira instance and decides, per viewer, how
 
 - **Nothing to anonymous visitors.** Without a logged-in user, no card is computed.
 - **Nothing on pages that work.** If the viewer can see the page, the fragment writes nothing, not even a style tag. The same holds on a page type removed from `PAGES`.
-- **Nothing about the issue to a viewer who fails the gates.** They get the generic card, whose payload is identical for an issue that exists and is hidden and for a key that does not exist. Its "raise a request" link is always `FALLBACK_URL`, never a per-project link from `ESCALATION_BY_PROJECT`, because a missing key has no project.
+- **Nothing about the issue to a viewer who fails the gates.** They get the generic card, whose payload is identical for an issue that exists and is hidden and for a key that does not exist. Its "raise a request" link is always `FALLBACK_URL`, never a per-project link from `ESCALATION_BY_PROJECT`, because a missing key has no project. The existence-only modes (`restricted`, `missing`) relax this on purpose for internal viewers with application access, and only when an administrator lists them in `MODE_ORDER`; they are off in every profile except `exists-only`.
 - **Nothing to portal-only customers beyond requests they can already open.** The `share`, `moved` and `secured` cards require application access (`hasAppAccess`: the account holds an application role), so a customer who only uses the portal is never told that an issue they cannot open exists.
 - **Never** an issue's summary, description, comments, attachments or field values; never anyone's e-mail address other than the viewer's own (used in their own copy-ready message); never the members of a security level or a group.
 - **Never** a level from a scheme outside `SECURED_SCHEMES`, or a level on `SECURED_SKIP_LEVELS`.
@@ -24,6 +24,8 @@ This fragment runs on every page of a Jira instance and decides, per viewer, how
 | `share` | a viewer with application access who passes the issue's security level | that the request exists, its reporter's display name, its portal link |
 | `moved` | a viewer with application access who passes the issue's security level | that the issue exists, its current key, its project's name, its former key |
 | `secured` | a viewer with application access who passes the internal-viewer policy and every scope and permission gate | that the issue exists, its security level's name, the field that opens it, up to two people who can add them; each of the last three only if `DISCLOSURE` allows it |
+| `restricted` (off unless in `MODE_ORDER`) | a viewer with application access who passes the internal-viewer policy, on an issue within `RESTRICTED_SCOPE` | that the issue exists and the viewer may not see it; nothing else |
+| `missing` (off unless in `MODE_ORDER`) | a viewer with application access who passes the internal-viewer policy | that no issue has this key. With `restricted` on as well, this audience can tell which keys exist, including by trying keys |
 
 The gates and their order are set out in [docs/DESIGN.md](docs/DESIGN.md).
 

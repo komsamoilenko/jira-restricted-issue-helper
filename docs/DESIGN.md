@@ -6,7 +6,7 @@ The card exists to be helpful on a page where Jira says nothing useful. Every us
 
 1. **Decide on the server, render in the browser.** All permission logic runs in the fragment, per viewer and per issue. The browser receives a small JSON payload (only the values its card needs) and a script that draws it. Nothing is inferred client-side.
 2. **Default to the generic card.** The payload is set to the generic card before any mode runs. Each mode runs inside its own `try`: an exception, a failed gate or an unknown state means "no answer", and the generic card stays. The helper never blanks a page and never breaks one: the entry point is wrapped so that a failure renders nothing at all.
-3. **No side channel between hidden and absent.** A viewer who fails the gates gets exactly the same payload for an issue that exists and is hidden as for a key that does not exist.
+3. **No side channel between hidden and absent.** A viewer who fails the gates gets exactly the same payload for an issue that exists and is hidden as for a key that does not exist. The one deliberate exception is the pair of existence-only modes, `restricted` and `missing`, which are off unless an administrator puts them in `MODE_ORDER` and which speak only to internal viewers with application access (see "Existence only").
 4. **Gates decide who; `DISCLOSURE` decides how much.** Configuration can make the restricted card say less to the viewers who pass its gates. It cannot make the card reach anyone the gates turned away.
 5. **Say only what the viewer can act on.** The restricted card suggests a field only if being added to it would actually open the issue, and names only people who can actually add the viewer.
 6. **Text, never markup.** Server values are JSON-escaped (`<`, `>` and `&` included) before they enter the inline script, and the client inserts them as text nodes. Level names, field names and display names cannot inject markup.
@@ -33,6 +33,8 @@ Helpers shared by the modes live in `core/context` (`hasAppAccess`, `passesSecur
 | `share` | a viewer with application access, who passes the issue's security level (or there is none), on a request whose reporter is active, is not the viewer, has an e-mail address, is not an automation account, and has access to the project's portal | that the request exists, the reporter's display name, the portal link. Never the reporter's e-mail address |
 | `moved` | a viewer with application access who passes the issue's security level, on an issue that used to be a service-desk request | that the issue exists, its current key and project name, its former key |
 | `secured` | a viewer who passes every gate below | that the issue exists, the level's name, the name of the field that opens it, at most two people (reporter, assignee) who can add the viewer. `DISCLOSURE` can withhold the name, the field's name and the people |
+| `restricted` (off by default) | an internal viewer with application access, on an issue hidden from them within `RESTRICTED_SCOPE` | that the issue exists and the viewer may not see it. Nothing else: no level, no field, no people |
+| `missing` (off by default) | an internal viewer with application access, on a key that resolves to nothing | that no issue has this key |
 
 The `share` and `moved` cards are gated on application access alone, not on the internal-viewer policy. They reveal less (no level, no compartment), and they are the right answer for anyone with application access who passes the issue's own security. If accounts outside your organisation hold application access and you want those cards restricted further, add the `isInternal` check to those two modes; see [SECURITY.md](../SECURITY.md).
 
@@ -88,6 +90,17 @@ Cheapest first; the first failure returns no answer, and the viewer keeps the ge
 A withheld value is not computed into the payload, so it never reaches the browser, not even in the page source. A key missing from the map counts as off. `DISCLOSURE_BY_LEVEL` overrides the global map per level id, in both directions.
 
 With all three switches off (the `secured-minimal` profile), the card still confirms that the issue exists, that a security level hides it, and, through `hasField`, whether one more person can be let in through a field. An organisation for which even that is too much should switch the mode off, or run the `jsm-only` profile.
+
+## Existence only
+
+Some administrators do not want the card to say anything about a restricted issue, and still want their staff to tell "restricted" from "deleted or mistyped". Two modes, both off unless listed in `MODE_ORDER`, do exactly that and no more:
+
+- `restricted`: the issue exists and this viewer may not see it. The card says so, offers "raise a request" and a link to open the key once access is granted. No level name, no field, no people, no copy-ready message.
+- `missing`: the key resolves to no issue. The card says so.
+
+Both speak only to a viewer who passes the internal-viewer policy and holds application access; everyone else keeps the generic card, which reads the same either way. `RESTRICTED_SCOPE` sets how far `restricted` goes: `in-scope` (the default) confirms only issues whose level is in `SECURED_SCHEMES` and not in `SECURED_SKIP_LEVELS`, so the compartments whose existence is the secret stay indistinguishable from missing keys; `all` confirms every issue hidden by a level; `any-issue` confirms every issue the viewer cannot browse, level or not.
+
+The trade-off is stated plainly: with both modes on, the audience can tell which keys exist, including by trying keys. That is acceptable for staff on many instances and never for customers, which is why the audience gate is not configurable downwards and why the modes are off by default. The `exists-only` profile builds just these two modes; `full` builds them in but leaves them out of `MODE_ORDER`, so an administrator can add `restricted` after `secured` and get the detailed card where it is safe and at least the fact everywhere else in scope.
 
 ## Why naming who can help is itself a disclosure
 

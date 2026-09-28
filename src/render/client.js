@@ -346,6 +346,39 @@
       sEsc.href = d.fallbackUrl;
       actions.appendChild(sEsc);
 
+    } else if (d.mode === 'restricted') {
+      badge.innerHTML = ICON_LOCK;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.restrictedTitle));
+      box.appendChild(el('p', 'jbh-text',
+        fmt(AGENT ? T.restrictedTextAgent : T.restrictedText, { key: d.issueKey })));
+
+      var rAsk = el('a', 'jbh-btn jbh-btn-primary');
+      rAsk.href = d.fallbackUrl;
+      rAsk.appendChild(document.createTextNode(T.raiseRequest));
+      withIcon(rAsk, ICON_ARROW);
+      actions.appendChild(rAsk);
+
+      var rOpen = el('a', 'jbh-link', fmt(T.restrictedOpenAgain, { key: d.issueKey }));
+      rOpen.href = d.issueUrl;
+      actions.appendChild(rOpen);
+
+    } else if (d.mode === 'missing') {
+      badge.innerHTML = ICON_HELP;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.missingTitle));
+      box.appendChild(el('p', 'jbh-text', fmt(T.missingText, { key: d.issueKey })));
+
+      var mHc = el('a', 'jbh-btn jbh-btn-primary');
+      mHc.href = d.helpCenter;
+      mHc.appendChild(document.createTextNode(T.openHelpCenter));
+      withIcon(mHc, ICON_ARROW);
+      actions.appendChild(mHc);
+
+      var mRaise = el('a', 'jbh-link', T.genericEscalate);
+      mRaise.href = d.fallbackUrl;
+      actions.appendChild(mRaise);
+
     } else {
       badge.innerHTML = ICON_HELP;
       box.appendChild(badge);

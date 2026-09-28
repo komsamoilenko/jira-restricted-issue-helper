@@ -148,6 +148,16 @@ final Map    DISCLOSURE_BY_LEVEL = [:]
 // 'customfield_10100', or just the number). Empty = the lowest field id wins.
 final List   SECURED_FIELD_PREFERENCE = []
 
+// Scope of the existence-only card (modes/restricted; off unless 'restricted'
+// is in MODE_ORDER). It tells an internal viewer with application access that
+// the issue exists and is closed to them, and nothing else:
+//   'in-scope'  only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS, so
+//               issues in compartments whose existence is the secret stay
+//               indistinguishable from missing keys;
+//   'all'       every issue hidden by a security level;
+//   'any-issue' every issue the viewer cannot browse, level or not.
+final String RESTRICTED_SCOPE = 'in-scope'
+
 // Every piece of text the card shows, in one place. {placeholders} are filled
 // in by the card: {key} issue key, {oldKey} its former key, {project} project
 // name, {level} security level name, {levelPhrase} levelNamed or
@@ -207,6 +217,14 @@ final Map    TEXT = [
     securedOpenAgain     : 'Added already? Open {key}',
     securedEscalateField : 'Nobody to ask? Raise a request',
     securedEscalateNoField : 'Something else? Raise a request',
+    // restricted (existence only; modes/restricted, off unless in MODE_ORDER)
+    restrictedTitle      : 'This issue is restricted',
+    restrictedText       : '{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request.',
+    restrictedTextAgent  : '{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request. Once you have access, open it with the link below rather than from a queue: queues also need an agent licence.',
+    restrictedOpenAgain  : 'Got access? Open {key}',
+    // missing (no issue with this key; modes/missing, off unless in MODE_ORDER)
+    missingTitle         : 'No issue with this key',
+    missingText          : 'There is no issue {key}. It may have been deleted, or the key may be mistyped. If you followed a link, ask whoever sent it.',
     // generic
     genericTitle         : "You can't view this issue",
     genericTitleAgent    : 'This page is for service desk agents',
@@ -908,6 +926,39 @@ if (payload) {
         hasField() ? T.securedEscalateField : T.securedEscalateNoField);
       sEsc.href = d.fallbackUrl;
       actions.appendChild(sEsc);
+
+    } else if (d.mode === 'restricted') {
+      badge.innerHTML = ICON_LOCK;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.restrictedTitle));
+      box.appendChild(el('p', 'jbh-text',
+        fmt(AGENT ? T.restrictedTextAgent : T.restrictedText, { key: d.issueKey })));
+
+      var rAsk = el('a', 'jbh-btn jbh-btn-primary');
+      rAsk.href = d.fallbackUrl;
+      rAsk.appendChild(document.createTextNode(T.raiseRequest));
+      withIcon(rAsk, ICON_ARROW);
+      actions.appendChild(rAsk);
+
+      var rOpen = el('a', 'jbh-link', fmt(T.restrictedOpenAgain, { key: d.issueKey }));
+      rOpen.href = d.issueUrl;
+      actions.appendChild(rOpen);
+
+    } else if (d.mode === 'missing') {
+      badge.innerHTML = ICON_HELP;
+      box.appendChild(badge);
+      box.appendChild(el('h1', 'jbh-title', T.missingTitle));
+      box.appendChild(el('p', 'jbh-text', fmt(T.missingText, { key: d.issueKey })));
+
+      var mHc = el('a', 'jbh-btn jbh-btn-primary');
+      mHc.href = d.helpCenter;
+      mHc.appendChild(document.createTextNode(T.openHelpCenter));
+      withIcon(mHc, ICON_ARROW);
+      actions.appendChild(mHc);
+
+      var mRaise = el('a', 'jbh-link', T.genericEscalate);
+      mRaise.href = d.fallbackUrl;
+      actions.appendChild(mRaise);
 
     } else {
       badge.innerHTML = ICON_HELP;

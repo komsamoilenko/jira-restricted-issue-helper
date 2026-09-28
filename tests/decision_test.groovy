@@ -131,6 +131,16 @@ final Map    DISCLOSURE_BY_LEVEL = [:]
 // 'customfield_10100', or just the number). Empty = the lowest field id wins.
 final List   SECURED_FIELD_PREFERENCE = []
 
+// Scope of the existence-only card (modes/restricted; off unless 'restricted'
+// is in MODE_ORDER). It tells an internal viewer with application access that
+// the issue exists and is closed to them, and nothing else:
+//   'in-scope'  only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS, so
+//               issues in compartments whose existence is the secret stay
+//               indistinguishable from missing keys;
+//   'all'       every issue hidden by a security level;
+//   'any-issue' every issue the viewer cannot browse, level or not.
+final String RESTRICTED_SCOPE = 'in-scope'
+
 // Every piece of text the card shows, in one place. {placeholders} are filled
 // in by the card: {key} issue key, {oldKey} its former key, {project} project
 // name, {level} security level name, {levelPhrase} levelNamed or
@@ -190,6 +200,14 @@ final Map    TEXT = [
     securedOpenAgain     : 'Added already? Open {key}',
     securedEscalateField : 'Nobody to ask? Raise a request',
     securedEscalateNoField : 'Something else? Raise a request',
+    // restricted (existence only; modes/restricted, off unless in MODE_ORDER)
+    restrictedTitle      : 'This issue is restricted',
+    restrictedText       : '{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request.',
+    restrictedTextAgent  : '{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request. Once you have access, open it with the link below rather than from a queue: queues also need an agent licence.',
+    restrictedOpenAgain  : 'Got access? Open {key}',
+    // missing (no issue with this key; modes/missing, off unless in MODE_ORDER)
+    missingTitle         : 'No issue with this key',
+    missingText          : 'There is no issue {key}. It may have been deleted, or the key may be mistyped. If you followed a link, ask whoever sent it.',
     // generic
     genericTitle         : "You can't view this issue",
     genericTitleAgent    : 'This page is for service desk agents',
@@ -556,6 +574,66 @@ MODES['secured'] = { ctx ->
             myMail: mailOf(user), fallbackUrl: escalationFor(proj)]
 }
 
+// modes/restricted.groovy -- existence only. The issue exists and this viewer
+// may not see it: say that, and nothing else. No level name, no field, no
+// people, no copy-ready message. For instances that do not want the card to
+// say anything about a restricted issue, but want staff to tell "restricted"
+// from "deleted" (its companion, modes/missing, covers the other half).
+//
+// OFF unless 'restricted' is in MODE_ORDER. Put it after 'secured' to use it
+// as the fallback when the restricted card has nothing safe to say, or alone
+// (profile exists-only). It deliberately relaxes the rule that a viewer who
+// fails the gates cannot tell a hidden issue from a missing key: for the
+// audience below, it can. docs/DESIGN.md, "Existence only".
+//
+// Audience: the viewer passes the internal-viewer policy and holds
+// application access. Scope, by RESTRICTED_SCOPE:
+//   'in-scope'   only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS, so
+//                issues in compartments whose existence is the secret stay
+//                indistinguishable from missing keys (default);
+//   'all'        every issue hidden by a security level;
+//   'any-issue'  every issue the viewer cannot browse, level or not.
+// Reveals: that the issue exists and the viewer lacks permission. The key is
+// already in the URL.
+
+MODES['restricted'] = { ctx ->
+    def issue = ctx.issue
+    def user  = ctx.user
+    if (issue == null) { return null }
+    if (!isInternal(user) || !hasAppAccess(user)) { return null }
+    Long levelId = issue.getSecurityLevelId()
+    if (RESTRICTED_SCOPE != 'any-issue') {
+        if (levelId == null) { return null }
+        // Already on the level: then the level is not what blocks them.
+        if (passesSecurity(issue, user)) { return null }
+        if (RESTRICTED_SCOPE != 'all') {
+            def level = ComponentAccessor.getComponent(IssueSecurityLevelManager).getSecurityLevel(levelId)
+            def schemesInScope = SECURED_SCHEMES.collect { it as Long }
+            def levelsToSkip   = SECURED_SKIP_LEVELS.collect { it as Long }
+            if (level == null || !schemesInScope.contains(level.getSchemeId() as Long) ||
+                levelsToSkip.contains(levelId as Long)) { return null }
+        }
+    }
+    return [mode: 'restricted', issueKey: issue.getKey(), issueUrl: '/browse/' + issue.getKey(),
+            fallbackUrl: escalationFor(ctx.proj)]
+}
+
+// modes/missing.groovy -- the key in the URL resolves to no issue: say so.
+// Companion of modes/restricted: together they let the audience tell a
+// restricted issue from a deleted or mistyped key, which the generic card
+// deliberately does not. OFF unless 'missing' is in MODE_ORDER.
+//
+// Audience: the viewer passes the internal-viewer policy and holds
+// application access. Everyone else keeps the generic card, which reads the
+// same whether the key exists or not.
+// Reveals: that no issue has this key.
+
+MODES['missing'] = { ctx ->
+    if (ctx.issue != null || !ctx.key) { return null }
+    if (!isInternal(ctx.user) || !hasAppAccess(ctx.user)) { return null }
+    return [mode: 'missing', issueKey: ctx.key, helpCenter: HELP_CENTER, fallbackUrl: FALLBACK_URL]
+}
+
 // core/decide.groovy -- decides which card (if any) this user gets for this
 // issue on this page. Always built in, last in the DECIDE section.
 
@@ -739,6 +817,32 @@ def CASES = [
   [name: 'X11 deactivated internal account x issue moved out of a service desk -> generic, never moved',
    user: 'former@example.com', key: 'DEMO-150', page: 'browse', needsInactive: true,
    expect: [mode: 'generic']],
+  // ---- existence-only modes (built into the full profile, off in MODE_ORDER):
+  //      called directly with the ctx decide() would build. `direct` names the
+  //      mode; null means "no answer". E03 assumes RESTRICTED_SCOPE = 'in-scope'. ----
+  [name: 'E01 restricted: internal viewer x restricted issue in scope -> restricted, nothing else',
+   user: 'alice@example.com', key: 'DEMO-101', page: 'browse', direct: 'restricted', needsLevel: true,
+   expect: [mode: 'restricted', issueKey: 'DEMO-101', issueUrl: '/browse/DEMO-101', fallbackUrl: FALLBACK_URL]],
+  [name: 'E02 restricted: external account x restricted issue -> no answer',
+   user: 'contractor@example.org', key: 'DEMO-101', page: 'browse', direct: 'restricted', needsLevel: true,
+   expect: null],
+  [name: 'E03 restricted: level in SECURED_SKIP_LEVELS, scope in-scope -> no answer',
+   user: 'alice@example.com', key: 'DEMO-104', page: 'browse', direct: 'restricted', needsLevel: true,
+   expect: null],
+  [name: 'E04 restricted: viewer already on the level -> no answer',
+   user: 'dave@example.com', key: 'DEMO-101', page: 'browse', direct: 'restricted', needsLevel: true,
+   expect: null],
+  [name: 'E05 restricted: deactivated internal account -> no answer',
+   user: 'former@example.com', key: 'DEMO-101', page: 'browse', direct: 'restricted', needsLevel: true,
+   needsInactive: true, expect: null],
+  [name: 'E06 missing: internal viewer x no such key -> missing',
+   user: 'alice@example.com', key: 'NOPE-99999', page: 'browse', direct: 'missing', missing: true,
+   expect: [mode: 'missing', issueKey: 'NOPE-99999', helpCenter: HELP_CENTER, fallbackUrl: FALLBACK_URL]],
+  [name: 'E07 missing: portal-only customer x no such key -> no answer',
+   user: 'customer@example.org', key: 'NOPE-99999', page: 'browse', direct: 'missing', missing: true,
+   expect: null],
+  [name: 'E08 missing: internal viewer x existing key -> no answer',
+   user: 'alice@example.com', key: 'DEMO-101', page: 'browse', direct: 'missing', expect: null],
 ]
 
 def um = ComponentAccessor.getUserManager()
@@ -774,12 +878,25 @@ CASES.each { c ->
         return
     }
     String key = issue != null ? issue.getKey() : c.key
+    if (c.direct && MODES[c.direct] == null) {
+        skip++
+        out.append('SKIP ' + c.name + '  [mode ' + c.direct + ' is not in this build]\n')
+        return
+    }
     def got = null
     String err = null
     MODE_ERRORS.clear()
     long t0 = System.currentTimeMillis()
     try {
-        got = decide(u, issue, key, c.page)
+        if (c.direct) {
+            // The ctx decide() builds, then the one mode on its own.
+            def pm = ComponentAccessor.getPermissionManager()
+            def ctx = [user: u, issue: issue, key: key, pageKind: c.page,
+                       proj: issue?.getProjectObject(), pm: pm, BROWSE: ProjectPermissions.BROWSE_PROJECTS]
+            got = (MODES[c.direct] as Closure)(ctx)
+        } else {
+            got = decide(u, issue, key, c.page)
+        }
     } catch (Throwable t) {
         err = t.getClass().getName() + ': ' + t.getMessage()
     }
@@ -788,7 +905,7 @@ CASES.each { c ->
     if (err != null) {
         problems << ('threw ' + err)
     } else if (c.containsKey('expect') && c.expect == null) {
-        if (got != null) { problems << ('expected no card, got ' + got) }
+        if (got != null) { problems << ((c.direct ? 'expected no answer, got ' : 'expected no card, got ') + got) }
     } else if (!(got instanceof Map)) {
         problems << ('expected a card, got ' + got)
     } else {

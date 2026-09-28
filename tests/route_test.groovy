@@ -125,6 +125,16 @@ final Map    DISCLOSURE_BY_LEVEL = [:]
 // 'customfield_10100', or just the number). Empty = the lowest field id wins.
 final List   SECURED_FIELD_PREFERENCE = []
 
+// Scope of the existence-only card (modes/restricted; off unless 'restricted'
+// is in MODE_ORDER). It tells an internal viewer with application access that
+// the issue exists and is closed to them, and nothing else:
+//   'in-scope'  only levels of SECURED_SCHEMES minus SECURED_SKIP_LEVELS, so
+//               issues in compartments whose existence is the secret stay
+//               indistinguishable from missing keys;
+//   'all'       every issue hidden by a security level;
+//   'any-issue' every issue the viewer cannot browse, level or not.
+final String RESTRICTED_SCOPE = 'in-scope'
+
 // Every piece of text the card shows, in one place. {placeholders} are filled
 // in by the card: {key} issue key, {oldKey} its former key, {project} project
 // name, {level} security level name, {levelPhrase} levelNamed or
@@ -184,6 +194,14 @@ final Map    TEXT = [
     securedOpenAgain     : 'Added already? Open {key}',
     securedEscalateField : 'Nobody to ask? Raise a request',
     securedEscalateNoField : 'Something else? Raise a request',
+    // restricted (existence only; modes/restricted, off unless in MODE_ORDER)
+    restrictedTitle      : 'This issue is restricted',
+    restrictedText       : '{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request.',
+    restrictedTextAgent  : '{key} exists, but you do not have permission to view it, so nothing about it can be shown here. Ask whoever shared the link with you, or raise a request. Once you have access, open it with the link below rather than from a queue: queues also need an agent licence.',
+    restrictedOpenAgain  : 'Got access? Open {key}',
+    // missing (no issue with this key; modes/missing, off unless in MODE_ORDER)
+    missingTitle         : 'No issue with this key',
+    missingText          : 'There is no issue {key}. It may have been deleted, or the key may be mistyped. If you followed a link, ask whoever sent it.',
     // generic
     genericTitle         : "You can't view this issue",
     genericTitleAgent    : 'This page is for service desk agents',
